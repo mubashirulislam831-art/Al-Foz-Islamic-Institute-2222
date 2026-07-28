@@ -1,0 +1,1531 @@
+<?php
+/**
+ * Al Foz Islamic Institute - Super Admin Edit Student
+ */
+require_once __DIR__ . '/../../includes/header.php';
+require_once __DIR__ . '/../../includes/permissions.php';
+require_once __DIR__ . '/../../includes/functions.php';
+require_once __DIR__ . '/../../includes/teachers_data.php';
+require_once __DIR__ . '/../../includes/students_data.php';
+
+// Strictly require Super Admin role
+require_role(['Admin', 'Super Admin']);
+
+// Handle Student Edit POST
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_type']) && $_POST['form_type'] === 'admission') {
+    $id = intval($_POST['id'] ?? $_GET['id'] ?? 0);
+    if ($id > 0) {
+        // Standardize selected days
+        $days_list = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+        $post_days = $_POST['days'] ?? [];
+        foreach ($days_list as $day) {
+            $direct_enabled = isset($_POST[$day . '_enabled']) && ($_POST[$day . '_enabled'] === '1' || $_POST[$day . '_enabled'] === 'Yes' || $_POST[$day . '_enabled'] === 'on' || $_POST[$day . '_enabled'] === true || $_POST[$day . '_enabled'] === 1);
+            $_POST[$day . '_enabled'] = $direct_enabled || in_array(ucfirst($day), $post_days) || in_array($day, $post_days);
+            $_POST[$day . '_pkt'] = $_POST[$day . '_time'] ?? ''; // fallback
+        }
+
+        // Resolve teacher_name if teacher_id is provided
+        $teacher_id = $_POST['teacher_id'] ?? '';
+        $teacher_name = "Unassigned";
+        if (!empty($teacher_id)) {
+            $matchedTeacher = get_teacher_by_id(intval($teacher_id));
+            if ($matchedTeacher) {
+                $teacher_name = $matchedTeacher['name'] ?? 'Unassigned';
+            }
+        }
+        $_POST['teacher_name'] = $teacher_name;
+
+        // Handle course
+        $course_val = $_POST['course'] ?? '';
+        $custom_course_val = $_POST['custom_course'] ?? '';
+        if ($course_val === 'Other' && !empty($custom_course_val)) {
+            $_POST['course'] = $custom_course_val;
+        }
+
+        update_student($id, $_POST);
+    }
+
+    if (!empty($_SERVER['HTTP_ACCEPT']) && strpos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false) {
+        header('Content-Type: application/json');
+        echo json_encode(['status' => 'success', 'redirect' => ($id > 0 ? 'student_profile.php?id=' . $id . '&updated=success' : 'students.php?updated=success')]);
+        exit;
+    }
+    if(ob_get_length()) ob_end_clean(); header("Location: " . ($id > 0 ? 'student_profile.php?id=' . $id . '&updated=success' : 'students.php?updated=success'));
+    exit;
+}
+
+// Fetch current student for pre-fill
+$student_id = intval($_GET['id'] ?? 0);
+$student = get_student_by_id($student_id);
+if (!$student) {
+    $all_studs = get_all_students();
+    foreach ($all_studs as $s) {
+        if (intval($s['id']) === $student_id || $s['student_id'] === ($_GET['id'] ?? '') || $s['roll_no'] === ($_GET['id'] ?? '') || end(explode('-', $s['roll_no'] ?? '')) === ($_GET['id'] ?? '')) {
+            $student = $s;
+            break;
+        }
+    }
+}
+
+// Pre-fill defaults
+$student_id_prefix = $student['student_id'] ?? ("STU-" . date('ymd') . rand(10,99));
+$reg_number = $student['reg_no'] ?? ($student['registration_number'] ?? ("REG-" . date('Y') . "-" . rand(100,999)));
+?><html><head><script>
+window.STUDENT_DATA = <?php echo json_encode($student ?? new stdClass()); ?>;
+document.addEventListener("DOMContentLoaded", () => {
+    const data = window.STUDENT_DATA;
+    if (data && typeof data === 'object') {
+        const flatData = {};
+        const flatten = (obj, prefix = '') => {
+            for (let key in obj) {
+                if (obj[key] && typeof obj[key] === 'object' && !Array.isArray(obj[key])) {
+                    flatten(obj[key], prefix + key + '_');
+                } else {
+                    flatData[prefix + key] = obj[key];
+                }
+            }
+        };
+        flatten(data);
+        
+        // Also merge root keys directly to ensure precedence
+        for (let key in data) {
+            if (typeof data[key] !== 'object' || data[key] === null || Array.isArray(data[key])) {
+                flatData[key] = data[key];
+            }
+        }
+
+        const form = document.getElementById('admissionForm');
+        if (form) {
+            const elements = form.elements;
+            for (let i = 0; i < elements.length; i++) {
+                const element = elements[i];
+                const name = element.name;
+                if (!name) continue;
+
+                const cleanName = name.replace('[]', '');
+                let value = undefined;
+
+                if (flatData[name] !== undefined) {
+                    value = flatData[name];
+                } else if (flatData[cleanName] !== undefined) {
+                    value = flatData[cleanName];
+                } else {
+                    // Search for any key ending with _name
+                    for (let flatKey in flatData) {
+                        if (flatKey.endsWith('_' + name)) {
+                            value = flatData[flatKey];
+                            break;
+                        }
+                    }
+                }
+
+                if (value === undefined || value === null) continue;
+
+                if (element.type === 'checkbox') {
+                    if (name.endsWith('[]')) {
+                        const valStr = String(element.value);
+                        if (Array.isArray(value)) {
+                            element.checked = value.map(String).includes(valStr);
+                        } else if (typeof value === 'string') {
+                            element.checked = value.split(',').map(s => s.trim()).includes(valStr);
+                        }
+                    } else {
+                        element.checked = (value === true || value === 1 || value === '1' || value === 'Yes' || value === 'on' || value === 'Enabled');
+                    }
+                } else if (element.type === 'radio') {
+                    element.checked = (String(element.value) === String(value));
+                } else if (element.tagName === 'SELECT') {
+                    element.value = value;
+                    element.dispatchEvent(new Event('change'));
+                } else {
+                    element.value = value;
+                }
+            }
+        }
+    }
+});
+</script>
+
+<!-- Sidebar -->
+<?php require_once __DIR__ . '/../../includes/sidebar.php'; ?>
+
+<!-- Main Portal Area -->
+</head><body><div class="flex-grow flex flex-col min-h-screen bg-transparent page-transition">
+  <div class="p-6 md:p-8 flex-grow">
+    
+    <!-- Navbar -->
+    <?php require_once __DIR__ . '/../../includes/navbar.php'; ?>
+
+    <!-- Wizard Header -->
+    <div class="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div>
+        <h2 class="text-[10px] font-bold text-primary/60 uppercase tracking-widest mb-1">AL FOZ ISLAMIC INSTITUTE</h2>
+        <h1 class="text-2xl sm:text-3xl font-black text-primary tracking-tight">Professional Student Edit Registry Wizard</h1>
+      </div>
+      <div>
+        <a href="students.php" class="bg-white border border-primary/20 hover:border-primary/40 text-primary px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider shadow-sm transition-all flex items-center gap-2">
+          <i data-lucide="arrow-left" class="w-4 h-4"></i> Back to Students
+        </a>
+      </div>
+    </div>
+
+    <!-- Sticky Progress Bar -->
+    <div class="relative z-10 bg-[#F7FAFF]/95 backdrop-blur-md pt-2 pb-4 mb-6" id="wizard-progress-container">
+        <div class="flex overflow-x-auto pb-2 hide-scrollbar items-center gap-2" id="wizard-steps-indicator">
+            <!-- Generated by JS -->
+        </div>
+    </div>
+    <!-- MAIN WIZARD FORM -->
+    <form action="edit_student.php?id=<?php echo $_GET['id'] ?? ''; ?>" method="POST" enctype="multipart/form-data" class="relative" id="admissionForm">
+      <input type="hidden" name="id" value="<?php echo $_GET['id'] ?? ''; ?>">
+
+      <input type="hidden" name="csrf_token" value="<?php echo bin2hex(random_bytes(32)); ?>">
+      <input type="hidden" name="form_type" value="admission">
+
+      
+      <!-- STEP 1: Student Identity & Credentials -->
+      <div class="wizard-step" id="step-1">
+        <div class="bg-white rounded-3xl p-6 md:p-8 border border-primary/10 shadow-sm mb-6 relative overflow-hidden">
+            <div class="absolute -right-10 -top-10 w-40 h-40 bg-emerald-50 rounded-full blur-3xl pointer-events-none"></div>
+            
+            <div class="flex items-center justify-between mb-8 relative z-10 border-b border-primary/5 pb-4">
+              <div>
+                <h2 class="text-xl font-black text-primary tracking-tight">Student Identity &amp; Credentials</h2>
+                <p class="text-xs font-bold text-primary/50 uppercase tracking-widest">Step 1 of 5 (Edit Mode)</p>
+              </div>
+              <div class="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600 shadow-sm border border-emerald-100">
+                <i data-lucide="user" class="w-6 h-6"></i>
+              </div>
+            </div>
+
+            
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 relative z-10">
+
+                <div class="lg:row-span-2 flex flex-col">
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-2">Profile Picture</label>
+                    <div class="flex-1 border-2 border-dashed border-primary/20 rounded-3xl p-6 text-center bg-slate-50/50 hover:bg-slate-50 transition-colors cursor-pointer relative flex flex-col items-center justify-center group">
+                        <input type="file" name="student_picture" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" accept="image/*" onchange="previewImage(this, 'student-preview')">
+                        <img id="student-preview" src="" class="w-24 h-24 rounded-full object-cover mb-3 hidden shadow-md">
+                        <i data-lucide="camera" class="w-8 h-8 text-primary/40 mx-auto mb-3 group-hover:scale-110 transition-transform" id="student-icon"></i>
+                        <p class="text-xs font-semibold text-primary/70 mb-1">Upload Photo</p>
+                        <p class="text-[9px] text-primary/40">JPG, PNG (Max 2MB)</p>
+                    </div>
+                </div>
+<div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Student ID</label>
+                            <input type="text" name="student_id" value="<?php echo htmlspecialchars($student['student_id'] ?? $student_id_prefix); ?>" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-100 text-xs font-bold text-primary outline-none focus:border-primary/30 focus:bg-white transition-all">
+                            <span class="text-[9px] font-semibold text-primary/40 mt-1 block">Auto-generated, editable</span>
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Registration Number</label>
+                            <input type="text" name="registration_number" value="<?php echo htmlspecialchars($student['reg_no'] ?? $reg_number); ?>" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-100 text-xs font-bold text-primary outline-none focus:border-primary/30 focus:bg-white transition-all">
+                            <span class="text-[9px] font-semibold text-primary/40 mt-1 block">Auto-generated, editable</span>
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Admission Date</label>
+                            <input type="date" name="admission_date" value="<?php echo htmlspecialchars($student['admission_date'] ?? date('Y-m-d')); ?>" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Joining Date</label>
+                            <input type="date" name="joining_date" value="<?php echo htmlspecialchars($student['joining_date'] ?? date('Y-m-d')); ?>" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div class="">
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Full Name</label>
+                            <input type="text" name="name" value="<?php echo htmlspecialchars($student['name'] ?? ''); ?>" placeholder="e.g. Abdullah Khan" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Father Name</label>
+                            <input type="text" name="father_name" value="<?php echo htmlspecialchars($student['father_name'] ?? ''); ?>" placeholder="e.g. Muhammad Khan" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Mother Name</label>
+                            <input type="text" name="mother_name" value="<?php echo htmlspecialchars($student['mother_name'] ?? ''); ?>" placeholder="e.g. Ayesha" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Student CNIC / B-Form</label>
+                            <input type="text" name="cnic" value="<?php echo htmlspecialchars($student['cnic'] ?? ''); ?>" placeholder="e.g. 12345-6789012-3" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Passport Number (Optional)</label>
+                            <input type="text" name="passport_number" value="<?php echo htmlspecialchars($student['passport_number'] ?? ''); ?>" placeholder="e.g. AB1234567" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Nationality</label>
+                            <input type="text" name="nationality" value="<?php echo htmlspecialchars($student['nationality'] ?? ''); ?>" placeholder="e.g. Pakistani" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Religion</label>
+                            <input type="text" name="religion" placeholder="e.g. Islam" value="<?php echo htmlspecialchars($student['religion'] ?? 'Islam'); ?>" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Blood Group</label>
+                            <input type="text" name="blood_group" value="<?php echo htmlspecialchars($student['blood_group'] ?? ''); ?>" placeholder="e.g. O+" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Gender</label>
+                            <select name="gender" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                                <option value="">Select Gender</option>
+                                <option value="Male">Male</option>
+                                <option value="Female">Female</option>
+                            </select>
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Student Category</label>
+                            <select name="student_category" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                                <option value="Child">Child</option>
+                                <option value="Teenager">Teenager</option>
+                                <option value="Adult">Adult</option>
+                            </select>
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Student Language</label>
+                            <select name="student_language" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                                <option value="English">English</option>
+                                <option value="Urdu">Urdu</option>
+                                <option value="Arabic">Arabic</option>
+                                <option value="Mixed">Mixed</option>
+                            </select>
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Date Of Birth</label>
+                            <input type="date" name="dob" id="student_dob" value="<?php echo htmlspecialchars($student['dob'] ?? ''); ?>" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Calculated Age</label>
+                            <div id="calculated_age_display" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-500">
+                                0 Years
+                            </div>
+                            <span class="text-[9px] font-semibold text-primary/40 mt-1 block">Auto calculated</span>
+                        </div><div>
+                                <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Portal Username / Email</label>
+                                <input type="email" name="portal_email" value="<?php echo htmlspecialchars($student['portal_email'] ?? ($student['portal_username'] ?? '')); ?>" placeholder="e.g. student@alfoz.com" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                                <span class="text-[9px] font-semibold text-primary/40 mt-1 block">Used by the student to log into the Student Portal panel</span>
+                            </div><div>
+                                <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Portal Password</label>
+                                <div class="relative">
+                                    <input type="text" name="portal_password" id="student_portal_pass" placeholder="Enter new password (or leave blank to keep)" class="w-full px-3 py-2 pr-20 border border-primary/20 rounded-xl text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                                    <button type="button" onclick="document.getElementById('student_portal_pass').value = Math.random().toString(36).slice(-8);" class="absolute right-2 top-1/2 -translate-y-1/2 bg-primary/10 hover:bg-primary/20 text-primary px-2.5 py-1 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-colors shadow-sm">Generate</button>
+                                </div>
+                            </div><div>
+                                <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Portal Status</label>
+                                <select name="student_portal_status" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                                    <option value="Active">Active</option>
+                                    <option value="Disabled">Disabled</option>
+                                </select>
+                            </div></div>
+        </div>
+      </div>
+
+      <!-- STEP 2: Contact & Parent Coordinates -->
+      <div class="wizard-step hidden" id="step-2">
+        <div class="bg-white rounded-3xl p-6 md:p-8 border border-primary/10 shadow-sm mb-6 relative overflow-hidden">
+            <div class="absolute -right-10 -top-10 w-40 h-40 bg-blue-50 rounded-full blur-3xl pointer-events-none"></div>
+            
+            <div class="flex items-center justify-between mb-8 relative z-10 border-b border-primary/5 pb-4">
+              <div>
+                <h2 class="text-xl font-black text-primary tracking-tight">Contact &amp; Parent Coordinates</h2>
+                <p class="text-xs font-bold text-primary/50 uppercase tracking-widest">Step 2 of 5</p>
+              </div>
+              <div class="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600 shadow-sm border border-blue-100">
+                <i data-lucide="map-pin" class="w-6 h-6"></i>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 relative z-10"><div class="">
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Country Name (Type manually)</label>
+                            <input type="text" name="country" value="<?php echo htmlspecialchars($student['country'] ?? ''); ?>" placeholder="e.g. United Kingdom" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                            <span class="text-[9px] font-semibold text-primary/40 mt-1 block">Type to automatically detect configurations</span>
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">State / Province</label>
+                            <input type="text" name="state" value="<?php echo htmlspecialchars($student['state'] ?? ''); ?>" placeholder="e.g. England" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">City Name</label>
+                            <input type="text" name="city" value="<?php echo htmlspecialchars($student['city'] ?? ''); ?>" placeholder="e.g. London" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Postal Code</label>
+                            <input type="text" name="postal_code" value="<?php echo htmlspecialchars($student['postal_code'] ?? ''); ?>" placeholder="e.g. SW1A 1AA" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Time Zone (Auto Suggested)</label>
+                            <input type="text" name="timezone" id="student_timezone" value="<?php echo htmlspecialchars($student['timezone'] ?? ''); ?>" placeholder="e.g. GMT" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div class="">
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Address Line 1</label>
+                            <input type="text" name="address_line_1" value="<?php echo htmlspecialchars($student['address_line_1'] ?? ''); ?>" placeholder="Street address, P.O. box, company name, c/o" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div class="">
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Address Line 2</label>
+                            <input type="text" name="address_line_2" value="<?php echo htmlspecialchars($student['address_line_2'] ?? ''); ?>" placeholder="Apartment, suite, unit, building, floor, etc." class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div class="">
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Google Maps Location (Optional)</label>
+                            <input type="text" name="google_maps_link" placeholder="Paste Google Maps URL" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div class="">
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Mobile Number</label>
+                            <input type="text" name="phone" placeholder="e.g. +447123456789" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">WhatsApp Number</label>
+                            <input type="text" name="whatsapp" placeholder="e.g. +447123456789" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Preferred Contact Method</label>
+                            <select name="preferred_contact_method" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                                <option value="WhatsApp">WhatsApp</option>
+                                <option value="Email">Email</option>
+                                <option value="Phone Call">Phone Call</option>
+                            </select>
+                        </div><div class="">
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Email Address</label>
+                            <input type="email" name="email" placeholder="e.g. parent.email@domain.com" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Emergency Contact Name</label>
+                            <input type="text" name="emergency_contact_name" placeholder="e.g. Ali Khan" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Emergency Contact Relation</label>
+                            <input type="text" name="emergency_contact_relation" placeholder="e.g. Uncle" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Emergency Contact Number</label>
+                            <input type="text" name="emergency_contact" placeholder="e.g. +447000000000" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all border-rose-200 focus:border-rose-400">
+                        </div><div>
+                                <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Parent Status</label>
+                                <select name="parent_status" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                                    <option value="Father">Father</option>
+                                    <option value="Mother">Mother</option>
+                                    <option value="Guardian">Guardian</option>
+                                </select>
+                            </div><div>
+                                <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Parent Username</label>
+                                <input type="text" name="parent_portal_username" placeholder="e.g. parent.khan" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                                <span class="text-[9px] font-semibold text-primary/40 mt-1 block">Used to sign in to the Parent Portal</span>
+                            </div><div>
+                                <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Parent Password</label>
+                                <input type="text" name="parent_portal_password" placeholder="Enter secure password" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                            </div><div>
+                                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Portal Status</label>
+                                    <select name="parent_portal_status" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                                        <option value="Active">Active</option>
+                                        <option value="Disabled">Disabled</option>
+                                    </select>
+                                </div><div>
+                                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Notification Preference</label>
+                                    <select name="parent_notification_pref" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                                        <option value="WhatsApp">WhatsApp</option>
+                                        <option value="Email">Email</option>
+                                        <option value="SMS">SMS</option>
+                                    </select>
+                                </div></div>
+        </div>
+      </div>
+
+      <!-- STEP 3: Academic & Status Assignment -->
+      <div class="wizard-step hidden" id="step-3">
+        <div class="bg-white rounded-3xl p-6 md:p-8 border border-primary/10 shadow-sm mb-6 relative overflow-hidden">
+            <div class="absolute -right-10 -top-10 w-40 h-40 bg-purple-50 rounded-full blur-3xl pointer-events-none"></div>
+            
+            <div class="flex items-center justify-between mb-8 relative z-10 border-b border-primary/5 pb-4">
+              <div>
+                <h2 class="text-xl font-black text-primary tracking-tight">Academic &amp; Status Assignment</h2>
+                <p class="text-xs font-bold text-primary/50 uppercase tracking-widest">Step 3 of 5</p>
+              </div>
+              <div class="w-12 h-12 bg-purple-50 rounded-2xl flex items-center justify-center text-purple-600 shadow-sm border border-purple-100">
+                <i data-lucide="graduation-cap" class="w-6 h-6"></i>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 relative z-10"><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Primary Course Module</label>
+                            <select name="course" id="course_select" onchange="toggleCustomCourse()" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                                <option value="">Choose Course Module...</option>
+                                <option value="Qaida (For Beginners)">Qaida (For Beginners)</option>
+                                <option value="Noorani Qaida">Noorani Qaida</option>
+                                <option value="Nazra Quran Reading">Nazra Quran Reading</option>
+                                <option value="Hifz-ul-Quran (Memorization)">Hifz-ul-Quran (Memorization)</option>
+                                <option value="Revision (Muraja)">Revision (Muraja)</option>
+                                <option value="Tajweed Rules">Tajweed Rules</option>
+                                <option value="Quran Translation">Quran Translation</option>
+                                <option value="Tafseer-ul-Quran">Tafseer-ul-Quran</option>
+                                <option value="Arabic Language">Arabic Language</option>
+                                <option value="Islamic Studies">Islamic Studies</option>
+                                <option value="Duas &amp; Sunnah">Duas &amp; Sunnah</option>
+                                <option value="Namaz Course">Namaz Course</option>
+                                <option value="Basic Islam for Kids">Basic Islam for Kids</option>
+                                <option value="Basic Islam for Adults">Basic Islam for Adults</option>
+                                <option value="Hadith Studies">Hadith Studies</option>
+                                <option value="Seerah Course">Seerah Course</option>
+                                <option value="Fiqh Basics">Fiqh Basics</option>
+                                <option value="Arabic Grammar (Nahw &amp; Sarf)">Arabic Grammar (Nahw &amp; Sarf)</option>
+                                <option value="Ijazah Preparation">Ijazah Preparation</option>
+                                <option value="Online School Tuition">Online School Tuition</option>
+                                <option value="Spoken Arabic">Spoken Arabic</option>
+                                <option value="Urdu Language">Urdu Language</option>
+                                <option value="English Language">English Language</option>
+                                <option value="Computer Basics">Computer Basics</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div><div id="custom_course_container" class="hidden">
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Enter Custom Course</label>
+                            <input type="text" name="custom_course" id="custom_course_input" placeholder="e.g. Advanced Hadith Studies" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Student Status</label>
+                            <select name="status" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all bg-emerald-50 border-emerald-100 text-emerald-700">
+                                <option value="Active">Active Student</option>
+                                <option value="Trial">Trial Student</option>
+                                <option value="Inactive">Inactive</option>
+                            </select>
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Assign Scholar</label>
+                            <select name="teacher_id" id="teacher_select" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                                <option value="">Select Teacher</option>
+                                <?php foreach(get_all_teachers() as $t): ?>
+                                <option value="<?php echo $t['id']; ?>" data-timezone="<?php echo htmlspecialchars($t['timezone'] ?? 'PKT'); ?>"><?php echo htmlspecialchars($t['name']); ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Learning Mode</label>
+                            <select name="learning_mode" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                                <option value="One to One">One to One</option>
+                                <option value="Group Class">Group Class</option>
+                            </select>
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Gender Preference</label>
+                            <select name="gender_preference" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                                <option value="Male Teacher">Male Teacher</option>
+                                <option value="Female Teacher">Female Teacher</option>
+                                <option value="No Preference">No Preference</option>
+                            </select>
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Course Level</label>
+                            <select name="course_level" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                                <option value="Beginner">Beginner</option>
+                                <option value="Intermediate">Intermediate</option>
+                                <option value="Advanced">Advanced</option>
+                            </select>
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Preferred Language</label>
+                            <select name="preferred_language" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                                <option value="English">English</option>
+                                <option value="Urdu">Urdu</option>
+                                <option value="Arabic">Arabic</option>
+                            </select>
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Quran Reading Level</label>
+                            <select name="quran_reading_level" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                                <option value="Cannot Read">Cannot Read</option>
+                                <option value="Basic">Basic</option>
+                                <option value="Average">Average</option>
+                                <option value="Fluent">Fluent</option>
+                            </select>
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Arabic Grammar Level</label>
+                            <select name="grammar_level" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                                <option value="None">None (Zero Foundation)</option>
+                                <option value="Basic">Basic Concepts</option>
+                                <option value="Intermediate">Intermediate Rules</option>
+                                <option value="Advanced">Advanced Grammar</option>
+                            </select>
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Current Level</label>
+                            <input type="text" name="current_level" placeholder="e.g. Intermediate Qaeda" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Previous Quran Experience</label>
+                            <input type="text" name="previous_experience" placeholder="e.g. Finished Noorani Qaeda" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Memorized Paras (Juz)</label>
+                            <input type="text" name="memorized_paras" placeholder="e.g. 2" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">School / Academic Grade</label>
+                            <input type="text" name="academic_grade" placeholder="e.g. Grade 5, Year 10" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Homework Required</label>
+                            <select name="homework_required" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                                <option value="Yes">Yes</option>
+                                <option value="No">No</option>
+                            </select>
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Exam Required</label>
+                            <select name="exam_required" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                                <option value="Monthly">Monthly</option>
+                                <option value="Quarterly">Quarterly</option>
+                                <option value="No">No</option>
+                            </select>
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Certificate Required</label>
+                            <select name="certificate_required" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                                <option value="Yes">Yes</option>
+                                <option value="No">No</option>
+                            </select>
+                        </div></div>
+        </div>
+      </div>
+
+      <!-- STEP 4: Weekly Class Schedule Planner -->
+      <div class="wizard-step hidden" id="step-4">
+        <div class="bg-white rounded-3xl p-6 md:p-8 border border-primary/10 shadow-sm mb-6 relative overflow-hidden">
+            <div class="absolute -right-10 -top-10 w-40 h-40 bg-orange-50 rounded-full blur-3xl pointer-events-none"></div>
+            
+            <div class="flex items-center justify-between mb-8 relative z-10 border-b border-primary/5 pb-4">
+              <div>
+                <h2 class="text-xl font-black text-primary tracking-tight">Weekly Class Schedule Planner</h2>
+                <p class="text-xs font-bold text-primary/50 uppercase tracking-widest">Step 4 of 5</p>
+              </div>
+              <div class="w-12 h-12 bg-orange-50 rounded-2xl flex items-center justify-center text-orange-600 shadow-sm border border-orange-100">
+                <i data-lucide="calendar" class="w-6 h-6"></i>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 gap-8 relative z-10">
+                <div class="space-y-5">
+                    <h3 class="text-[11px] font-black uppercase tracking-widest text-primary border-b border-primary/5 pb-2">Weekly Class Timing Grid</h3>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                        
+                        <!-- CARD 1: MONDAY -->
+                        <div class="border border-slate-200 rounded-2xl p-5 bg-white shadow-sm hover:shadow transition-all flex flex-col gap-4 relative overflow-hidden group">
+                            <div class="absolute top-0 left-0 w-2 h-full bg-slate-300 group-hover:bg-primary transition-colors duration-300" id="monday_status_indicator"></div>
+                            <div class="flex items-center justify-between border-b border-primary/5 pb-3">
+                                <span class="text-sm font-black text-primary tracking-wider">MONDAY</span>
+                                <span class="bg-slate-100 text-slate-500 px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-widest" id="monday_badge">Inactive</span>
+                            </div>
+                            
+                            <label class="flex items-center gap-2.5 cursor-pointer bg-slate-50 hover:bg-primary/5 p-2 rounded-xl border border-primary/10 transition-colors">
+                                <input type="checkbox" name="monday_enabled" id="monday_enabled" value="1" class="w-4 h-4 text-primary rounded border-primary/30 day-checkbox">
+                                <span class="text-xs font-bold text-primary/80 uppercase tracking-wide">Enable Monday</span>
+                            </label>
+
+                            <div class="space-y-3">
+                                <div>
+                                    <label class="block text-[9px] font-bold text-primary/50 uppercase tracking-wider mb-1">Student Time</label>
+                                    <input type="time" name="monday_time" id="monday_time" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-white transition-all schedule-input">
+                                </div>
+                                <div>
+                                    <label class="block text-[9px] font-bold text-primary/50 uppercase tracking-wider mb-1">Duration</label>
+                                    <select name="monday_duration" id="monday_duration" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-white transition-all schedule-input">
+                                        <option value="30">30 Min</option>
+                                        <option value="45">45 Min</option>
+                                        <option value="60">60 Min</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="border-t border-slate-100 pt-3 space-y-2.5 text-xs">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[9px] font-bold text-primary/50 uppercase tracking-wider">Student Local Time:</span>
+                                    <span class="font-bold text-primary" id="monday_student_local_display">-</span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[9px] font-bold text-primary/50 uppercase tracking-wider">Teacher Time:</span>
+                                    <span class="font-bold text-primary" id="monday_teacher_display">-</span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[9px] font-bold text-primary/50 uppercase tracking-wider">Pakistan Time:</span>
+                                    <span class="font-bold text-emerald-600" id="monday_pakistan_display">-</span>
+                                </div>
+                            </div>
+                            <input type="hidden" name="monday_pkt" id="monday_pkt">
+                        </div>
+
+                        <!-- CARD 2: TUESDAY -->
+                        <div class="border border-slate-200 rounded-2xl p-5 bg-white shadow-sm hover:shadow transition-all flex flex-col gap-4 relative overflow-hidden group">
+                            <div class="absolute top-0 left-0 w-2 h-full bg-slate-300 group-hover:bg-primary transition-colors duration-300" id="tuesday_status_indicator"></div>
+                            <div class="flex items-center justify-between border-b border-primary/5 pb-3">
+                                <span class="text-sm font-black text-primary tracking-wider">TUESDAY</span>
+                                <span class="bg-slate-100 text-slate-500 px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-widest" id="tuesday_badge">Inactive</span>
+                            </div>
+                            
+                            <label class="flex items-center gap-2.5 cursor-pointer bg-slate-50 hover:bg-primary/5 p-2 rounded-xl border border-primary/10 transition-colors">
+                                <input type="checkbox" name="tuesday_enabled" id="tuesday_enabled" value="1" class="w-4 h-4 text-primary rounded border-primary/30 day-checkbox">
+                                <span class="text-xs font-bold text-primary/80 uppercase tracking-wide">Enable Tuesday</span>
+                            </label>
+
+                            <div class="space-y-3">
+                                <div>
+                                    <label class="block text-[9px] font-bold text-primary/50 uppercase tracking-wider mb-1">Student Time</label>
+                                    <input type="time" name="tuesday_time" id="tuesday_time" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-white transition-all schedule-input">
+                                </div>
+                                <div>
+                                    <label class="block text-[9px] font-bold text-primary/50 uppercase tracking-wider mb-1">Duration</label>
+                                    <select name="tuesday_duration" id="tuesday_duration" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-white transition-all schedule-input">
+                                        <option value="30">30 Min</option>
+                                        <option value="45">45 Min</option>
+                                        <option value="60">60 Min</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="border-t border-slate-100 pt-3 space-y-2.5 text-xs">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[9px] font-bold text-primary/50 uppercase tracking-wider">Student Local Time:</span>
+                                    <span class="font-bold text-primary" id="tuesday_student_local_display">-</span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[9px] font-bold text-primary/50 uppercase tracking-wider">Teacher Time:</span>
+                                    <span class="font-bold text-primary" id="tuesday_teacher_display">-</span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[9px] font-bold text-primary/50 uppercase tracking-wider">Pakistan Time:</span>
+                                    <span class="font-bold text-emerald-600" id="tuesday_pakistan_display">-</span>
+                                </div>
+                            </div>
+                            <input type="hidden" name="tuesday_pkt" id="tuesday_pkt">
+                        </div>
+
+                        <!-- CARD 3: WEDNESDAY -->
+                        <div class="border border-slate-200 rounded-2xl p-5 bg-white shadow-sm hover:shadow transition-all flex flex-col gap-4 relative overflow-hidden group">
+                            <div class="absolute top-0 left-0 w-2 h-full bg-slate-300 group-hover:bg-primary transition-colors duration-300" id="wednesday_status_indicator"></div>
+                            <div class="flex items-center justify-between border-b border-primary/5 pb-3">
+                                <span class="text-sm font-black text-primary tracking-wider">WEDNESDAY</span>
+                                <span class="bg-slate-100 text-slate-500 px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-widest" id="wednesday_badge">Inactive</span>
+                            </div>
+                            
+                            <label class="flex items-center gap-2.5 cursor-pointer bg-slate-50 hover:bg-primary/5 p-2 rounded-xl border border-primary/10 transition-colors">
+                                <input type="checkbox" name="wednesday_enabled" id="wednesday_enabled" value="1" class="w-4 h-4 text-primary rounded border-primary/30 day-checkbox">
+                                <span class="text-xs font-bold text-primary/80 uppercase tracking-wide">Enable Wednesday</span>
+                            </label>
+
+                            <div class="space-y-3">
+                                <div>
+                                    <label class="block text-[9px] font-bold text-primary/50 uppercase tracking-wider mb-1">Student Time</label>
+                                    <input type="time" name="wednesday_time" id="wednesday_time" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-white transition-all schedule-input">
+                                </div>
+                                <div>
+                                    <label class="block text-[9px] font-bold text-primary/50 uppercase tracking-wider mb-1">Duration</label>
+                                    <select name="wednesday_duration" id="wednesday_duration" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-white transition-all schedule-input">
+                                        <option value="30">30 Min</option>
+                                        <option value="45">45 Min</option>
+                                        <option value="60">60 Min</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="border-t border-slate-100 pt-3 space-y-2.5 text-xs">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[9px] font-bold text-primary/50 uppercase tracking-wider">Student Local Time:</span>
+                                    <span class="font-bold text-primary" id="wednesday_student_local_display">-</span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[9px] font-bold text-primary/50 uppercase tracking-wider">Teacher Time:</span>
+                                    <span class="font-bold text-primary" id="wednesday_teacher_display">-</span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[9px] font-bold text-primary/50 uppercase tracking-wider">Pakistan Time:</span>
+                                    <span class="font-bold text-emerald-600" id="wednesday_pakistan_display">-</span>
+                                </div>
+                            </div>
+                            <input type="hidden" name="wednesday_pkt" id="wednesday_pkt">
+                        </div>
+
+                        <!-- CARD 4: THURSDAY -->
+                        <div class="border border-slate-200 rounded-2xl p-5 bg-white shadow-sm hover:shadow transition-all flex flex-col gap-4 relative overflow-hidden group">
+                            <div class="absolute top-0 left-0 w-2 h-full bg-slate-300 group-hover:bg-primary transition-colors duration-300" id="thursday_status_indicator"></div>
+                            <div class="flex items-center justify-between border-b border-primary/5 pb-3">
+                                <span class="text-sm font-black text-primary tracking-wider">THURSDAY</span>
+                                <span class="bg-slate-100 text-slate-500 px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-widest" id="thursday_badge">Inactive</span>
+                            </div>
+                            
+                            <label class="flex items-center gap-2.5 cursor-pointer bg-slate-50 hover:bg-primary/5 p-2 rounded-xl border border-primary/10 transition-colors">
+                                <input type="checkbox" name="thursday_enabled" id="thursday_enabled" value="1" class="w-4 h-4 text-primary rounded border-primary/30 day-checkbox">
+                                <span class="text-xs font-bold text-primary/80 uppercase tracking-wide">Enable Thursday</span>
+                            </label>
+
+                            <div class="space-y-3">
+                                <div>
+                                    <label class="block text-[9px] font-bold text-primary/50 uppercase tracking-wider mb-1">Student Time</label>
+                                    <input type="time" name="thursday_time" id="thursday_time" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-white transition-all schedule-input">
+                                </div>
+                                <div>
+                                    <label class="block text-[9px] font-bold text-primary/50 uppercase tracking-wider mb-1">Duration</label>
+                                    <select name="thursday_duration" id="thursday_duration" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-white transition-all schedule-input">
+                                        <option value="30">30 Min</option>
+                                        <option value="45">45 Min</option>
+                                        <option value="60">60 Min</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="border-t border-slate-100 pt-3 space-y-2.5 text-xs">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[9px] font-bold text-primary/50 uppercase tracking-wider">Student Local Time:</span>
+                                    <span class="font-bold text-primary" id="thursday_student_local_display">-</span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[9px] font-bold text-primary/50 uppercase tracking-wider">Teacher Time:</span>
+                                    <span class="font-bold text-primary" id="thursday_teacher_display">-</span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[9px] font-bold text-primary/50 uppercase tracking-wider">Pakistan Time:</span>
+                                    <span class="font-bold text-emerald-600" id="thursday_pakistan_display">-</span>
+                                </div>
+                            </div>
+                            <input type="hidden" name="thursday_pkt" id="thursday_pkt">
+                        </div>
+
+                        <!-- CARD 5: FRIDAY -->
+                        <div class="border border-slate-200 rounded-2xl p-5 bg-white shadow-sm hover:shadow transition-all flex flex-col gap-4 relative overflow-hidden group">
+                            <div class="absolute top-0 left-0 w-2 h-full bg-slate-300 group-hover:bg-primary transition-colors duration-300" id="friday_status_indicator"></div>
+                            <div class="flex items-center justify-between border-b border-primary/5 pb-3">
+                                <span class="text-sm font-black text-primary tracking-wider">FRIDAY</span>
+                                <span class="bg-slate-100 text-slate-500 px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-widest" id="friday_badge">Inactive</span>
+                            </div>
+                            
+                            <label class="flex items-center gap-2.5 cursor-pointer bg-slate-50 hover:bg-primary/5 p-2 rounded-xl border border-primary/10 transition-colors">
+                                <input type="checkbox" name="friday_enabled" id="friday_enabled" value="1" class="w-4 h-4 text-primary rounded border-primary/30 day-checkbox">
+                                <span class="text-xs font-bold text-primary/80 uppercase tracking-wide">Enable Friday</span>
+                            </label>
+
+                            <div class="space-y-3">
+                                <div>
+                                    <label class="block text-[9px] font-bold text-primary/50 uppercase tracking-wider mb-1">Student Time</label>
+                                    <input type="time" name="friday_time" id="friday_time" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-white transition-all schedule-input">
+                                </div>
+                                <div>
+                                    <label class="block text-[9px] font-bold text-primary/50 uppercase tracking-wider mb-1">Duration</label>
+                                    <select name="friday_duration" id="friday_duration" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-white transition-all schedule-input">
+                                        <option value="30">30 Min</option>
+                                        <option value="45">45 Min</option>
+                                        <option value="60">60 Min</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="border-t border-slate-100 pt-3 space-y-2.5 text-xs">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[9px] font-bold text-primary/50 uppercase tracking-wider">Student Local Time:</span>
+                                    <span class="font-bold text-primary" id="friday_student_local_display">-</span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[9px] font-bold text-primary/50 uppercase tracking-wider">Teacher Time:</span>
+                                    <span class="font-bold text-primary" id="friday_teacher_display">-</span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[9px] font-bold text-primary/50 uppercase tracking-wider">Pakistan Time:</span>
+                                    <span class="font-bold text-emerald-600" id="friday_pakistan_display">-</span>
+                                </div>
+                            </div>
+                            <input type="hidden" name="friday_pkt" id="friday_pkt">
+                        </div>
+
+                        <!-- CARD 6: SATURDAY -->
+                        <div class="border border-slate-200 rounded-2xl p-5 bg-white shadow-sm hover:shadow transition-all flex flex-col gap-4 relative overflow-hidden group">
+                            <div class="absolute top-0 left-0 w-2 h-full bg-slate-300 group-hover:bg-primary transition-colors duration-300" id="saturday_status_indicator"></div>
+                            <div class="flex items-center justify-between border-b border-primary/5 pb-3">
+                                <span class="text-sm font-black text-primary tracking-wider">SATURDAY</span>
+                                <span class="bg-slate-100 text-slate-500 px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-widest" id="saturday_badge">Inactive</span>
+                            </div>
+                            
+                            <label class="flex items-center gap-2.5 cursor-pointer bg-slate-50 hover:bg-primary/5 p-2 rounded-xl border border-primary/10 transition-colors">
+                                <input type="checkbox" name="saturday_enabled" id="saturday_enabled" value="1" class="w-4 h-4 text-primary rounded border-primary/30 day-checkbox">
+                                <span class="text-xs font-bold text-primary/80 uppercase tracking-wide">Enable Saturday</span>
+                            </label>
+
+                            <div class="space-y-3">
+                                <div>
+                                    <label class="block text-[9px] font-bold text-primary/50 uppercase tracking-wider mb-1">Student Time</label>
+                                    <input type="time" name="saturday_time" id="saturday_time" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-white transition-all schedule-input">
+                                </div>
+                                <div>
+                                    <label class="block text-[9px] font-bold text-primary/50 uppercase tracking-wider mb-1">Duration</label>
+                                    <select name="saturday_duration" id="saturday_duration" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-white transition-all schedule-input">
+                                        <option value="30">30 Min</option>
+                                        <option value="45">45 Min</option>
+                                        <option value="60">60 Min</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="border-t border-slate-100 pt-3 space-y-2.5 text-xs">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[9px] font-bold text-primary/50 uppercase tracking-wider">Student Local Time:</span>
+                                    <span class="font-bold text-primary" id="saturday_student_local_display">-</span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[9px] font-bold text-primary/50 uppercase tracking-wider">Teacher Time:</span>
+                                    <span class="font-bold text-primary" id="saturday_teacher_display">-</span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[9px] font-bold text-primary/50 uppercase tracking-wider">Pakistan Time:</span>
+                                    <span class="font-bold text-emerald-600" id="saturday_pakistan_display">-</span>
+                                </div>
+                            </div>
+                            <input type="hidden" name="saturday_pkt" id="saturday_pkt">
+                        </div>
+
+                        <!-- CARD 7: SUNDAY -->
+                        <div class="border border-slate-200 rounded-2xl p-5 bg-white shadow-sm hover:shadow transition-all flex flex-col gap-4 relative overflow-hidden group">
+                            <div class="absolute top-0 left-0 w-2 h-full bg-slate-300 group-hover:bg-primary transition-colors duration-300" id="sunday_status_indicator"></div>
+                            <div class="flex items-center justify-between border-b border-primary/5 pb-3">
+                                <span class="text-sm font-black text-primary tracking-wider">SUNDAY</span>
+                                <span class="bg-slate-100 text-slate-500 px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-widest" id="sunday_badge">Inactive</span>
+                            </div>
+                            
+                            <label class="flex items-center gap-2.5 cursor-pointer bg-slate-50 hover:bg-primary/5 p-2 rounded-xl border border-primary/10 transition-colors">
+                                <input type="checkbox" name="sunday_enabled" id="sunday_enabled" value="1" class="w-4 h-4 text-primary rounded border-primary/30 day-checkbox">
+                                <span class="text-xs font-bold text-primary/80 uppercase tracking-wide">Enable Sunday</span>
+                            </label>
+
+                            <div class="space-y-3">
+                                <div>
+                                    <label class="block text-[9px] font-bold text-primary/50 uppercase tracking-wider mb-1">Student Time</label>
+                                    <input type="time" name="sunday_time" id="sunday_time" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-white transition-all schedule-input">
+                                </div>
+                                <div>
+                                    <label class="block text-[9px] font-bold text-primary/50 uppercase tracking-wider mb-1">Duration</label>
+                                    <select name="sunday_duration" id="sunday_duration" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-white transition-all schedule-input">
+                                        <option value="30">30 Min</option>
+                                        <option value="45">45 Min</option>
+                                        <option value="60">60 Min</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="border-t border-slate-100 pt-3 space-y-2.5 text-xs">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[9px] font-bold text-primary/50 uppercase tracking-wider">Student Local Time:</span>
+                                    <span class="font-bold text-primary" id="sunday_student_local_display">-</span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[9px] font-bold text-primary/50 uppercase tracking-wider">Teacher Time:</span>
+                                    <span class="font-bold text-primary" id="sunday_teacher_display">-</span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[9px] font-bold text-primary/50 uppercase tracking-wider">Pakistan Time:</span>
+                                    <span class="font-bold text-emerald-600" id="sunday_pakistan_display">-</span>
+                                </div>
+                            </div>
+                            <input type="hidden" name="sunday_pkt" id="sunday_pkt">
+                        </div>
+
+                    </div>
+                </div>
+
+                <div class="bg-primary/5 border border-primary/10 rounded-2xl p-4 text-xs font-medium text-primary/70 leading-relaxed text-center">
+                    The timing engine computes timezone adjustments instantaneously. It maps the student's typed Country and City timezone relative to the selected Teacher/Scholar's local timezone, converting all class durations reliably to Pakistan Standard Time (PKT) for institutional auditing.
+                </div>
+            </div>
+        </div>
+      </div>
+      
+
+      </div>
+      <!-- STEP 5: Financials, Docs & Notes -->
+      <div class="wizard-step hidden" id="step-5">
+        <div class="bg-white rounded-3xl p-6 md:p-8 border border-primary/10 shadow-sm mb-6 relative overflow-hidden">
+            <div class="absolute -right-10 -top-10 w-40 h-40 bg-teal-50 rounded-full blur-3xl pointer-events-none"></div>
+            
+            <div class="flex items-center justify-between mb-8 relative z-10 border-b border-primary/5 pb-4">
+              <div>
+                <h2 class="text-xl font-black text-primary tracking-tight">Financials, Docs &amp; Notes</h2>
+                <p class="text-xs font-bold text-primary/50 uppercase tracking-widest">Step 5 of 5</p>
+              </div>
+              <div class="w-12 h-12 bg-teal-50 rounded-2xl flex items-center justify-center text-teal-600 shadow-sm border border-teal-100">
+                <i data-lucide="file-text" class="w-6 h-6"></i>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 relative z-10"><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Tuition Currency</label>
+                            <input type="text" name="currency" placeholder="e.g. PKR" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                            <span class="text-[9px] font-semibold text-primary/40 mt-1 block">Auto-detected</span>
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Registration Fee</label>
+                            <input type="number" name="registration_fee" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Monthly Fee</label>
+                            <input type="number" name="monthly_fee" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Payment Cycle</label>
+                            <select name="payment_cycle" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                                <option value="Monthly">Monthly</option>
+                                <option value="Weekly">Weekly</option>
+                                <option value="Quarterly">Quarterly</option>
+                            </select>
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Payment Method</label>
+                            <select name="payment_method" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                                <option value="Bank">Bank</option>
+                                <option value="Wise">Wise</option>
+                                <option value="PayPal">PayPal</option>
+                                <option value="Stripe">Stripe</option>
+                                <option value="JazzCash">JazzCash</option>
+                                <option value="EasyPaisa">EasyPaisa</option>
+                                <option value="Cash">Cash</option>
+                            </select>
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Invoice Number</label>
+                            <input type="text" name="invoice_number" value="INV-<?php echo time(); ?>" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-100 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                            <span class="text-[9px] font-semibold text-primary/40 mt-1 block">Auto Generate</span>
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Last Payment Date</label>
+                            <input type="date" name="last_payment_date" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Next Due Date</label>
+                            <input type="date" name="next_due_date" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Late Fee</label>
+                            <input type="number" name="late_fee" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Discount Amount</label>
+                            <input type="number" name="discount" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div class="">
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Discount Reason</label>
+                            <input type="text" name="discount_reason" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Scholarship Relief</label>
+                            <input type="number" name="scholarship" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div class="">
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Scholarship Reason</label>
+                            <input type="text" name="scholarship_reason" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Lead Source</label>
+                            <select name="lead_source" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                                <option value="Website">Website</option>
+                                <option value="Facebook">Facebook</option>
+                                <option value="Instagram">Instagram</option>
+                                <option value="WhatsApp">WhatsApp</option>
+                                <option value="Referral">Referral</option>
+                                <option value="Google">Google</option>
+                            </select>
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Admission Counselor</label>
+                            <select name="counselor" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                                <option value="Admin 1">Admin 1</option>
+                                <option value="Admin 2">Admin 2</option>
+                            </select>
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Student Priority</label>
+                            <select name="student_priority" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                                <option value="Normal">Normal</option>
+                                <option value="High">High</option>
+                                <option value="VIP">VIP</option>
+                            </select>
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Risk Level</label>
+                            <select name="risk_level" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                                <option value="Low">Low</option>
+                                <option value="Medium">Medium</option>
+                                <option value="High">High</option>
+                            </select>
+                        </div><div class="">
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Academic Notes</label>
+                            <textarea name="academic_notes" rows="2" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all resize-none"></textarea>
+                        </div><div class="">
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Behavior Notes</label>
+                            <textarea name="behavior_notes" rows="2" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all resize-none"></textarea>
+                        </div><div class="">
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Private Notes (Admin only)</label>
+                            <textarea name="admin_notes" rows="2" placeholder="Private internal registration notes..." class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all resize-none"></textarea>
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Student Tag (Tags comma separated)</label>
+                            <input type="text" name="tags" placeholder="e.g. Needs Attention, Fast Learner, Sponsored" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div>
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Special Board Instructions</label>
+                            <input type="text" name="special_instructions" placeholder="e.g. Student prefers female teacher if substitute is needed" class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all">
+                        </div><div class="">
+                            <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Teacher &amp; Lesson Instructions</label>
+                            <textarea name="teacher_instructions" rows="2" placeholder="Lesson targets, focus elements, and instructional methods..." class="w-full px-4 py-3 border border-primary/10 rounded-2xl bg-slate-50/50 text-xs font-semibold text-primary outline-none focus:border-primary/50 transition-all resize-none"></textarea>
+                        </div></div>
+        </div>
+      </div>
+
+      <!-- Wizard Controls -->
+      <div class="flex flex-col md:flex-row items-center justify-between bg-white p-5 rounded-3xl border border-primary/10 shadow-sm mt-8 gap-4" id="wizard-controls">
+          <div class="flex gap-2 w-full md:w-auto">
+              <button type="button" id="btn-prev" class="hidden px-5 py-3 bg-white border border-primary/20 text-primary rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-primary/5 transition-all shadow-sm w-full md:w-auto text-center"><i data-lucide="arrow-left" class="w-4 h-4 inline-block mr-1"></i> Previous</button>
+          </div>
+          <div class="flex gap-2 w-full md:w-auto flex-wrap justify-center md:justify-end" id="action-buttons">
+              <button type="button" class="hidden lg:block px-5 py-3 bg-white border border-primary/20 text-primary/70 rounded-xl text-[10px] font-bold uppercase tracking-wider hover:bg-primary/5 transition-all shadow-sm" onclick="saveDraft()">Save Draft</button>
+              <button type="reset" class="hidden lg:block px-5 py-3 bg-white border border-primary/20 text-rose-500 rounded-xl text-[10px] font-bold uppercase tracking-wider hover:bg-rose-50 transition-all shadow-sm">Reset</button>
+              
+              <button type="button" class="hidden lg:block px-4 py-3 bg-white border border-primary/20 text-primary/70 rounded-xl text-[10px] font-bold uppercase tracking-wider hover:bg-primary/5 transition-all shadow-sm" title="Print"><i data-lucide="printer" class="w-4 h-4"></i></button>
+              
+              <button type="button" id="btn-next" class="px-5 py-3 bg-primary text-white rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-primary/95 transition-all shadow-md w-full md:w-auto text-center">Next Step <i data-lucide="arrow-right" class="w-4 h-4 inline-block ml-1"></i></button>
+              <button type="submit" id="btn-submit" class="hidden px-6 py-3 bg-emerald-500 text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-500/20 w-full md:w-auto text-center transform hover:-translate-y-0.5" onclick="showSuccessAnimation(event)"><i data-lucide="save" class="w-4 h-4 inline-block mr-1"></i> Update Student</button>
+          </div>
+      </div>
+
+        
+  </form>
+  </div> <!-- Close p-6 -->
+ <!-- Close flex-grow wrapper -->
+
+<!-- Shared Footer -->
+<?php require_once __DIR__ . '/../../includes/footer.php'; ?>
+
+<script>
+
+  // Timezone Offset Calculation and Display logic
+  function getOffsetHours(tzString) {
+      if (!tzString) return 5; // Default to PKT (UTC+5)
+      tzString = tzString.toUpperCase().trim();
+      
+      // Check for explicit offset notations like GMT+5, UTC-4, +05:00, -04:00
+      const offsetMatch = tzString.match(/(?:GMT|UTC)?\s*([+-]\d+)(?::?(\d+))?/);
+      if (offsetMatch) {
+          const hours = parseInt(offsetMatch[1], 10);
+          const minutes = offsetMatch[2] ? parseInt(offsetMatch[2], 10) : 0;
+          return hours + (hours >= 0 ? minutes / 60 : -minutes / 60);
+      }
+      
+      // Common timezone mappings
+      const tzOffsets = {
+          'PKT': 5, 'GMT': 0, 'UTC': 0, 'EST': -5, 'EDT': -4, 'CST': -6, 'CDT': -5,
+          'MST': -7, 'MDT': -6, 'PST': -8, 'PDT': -7, 'BST': 1, 'CET': 1, 'CEST': 2,
+          'GST': 4, 'AST': 3, 'IST': 5.5, 'AEST': 10, 'AEDT': 11
+      };
+      
+      if (tzOffsets[tzString] !== undefined) {
+          return tzOffsets[tzString];
+      }
+      
+      try {
+          const date = new Date();
+          const parts = new Intl.DateTimeFormat('en-US', {
+              timeZone: tzString,
+              timeZoneName: 'longOffset'
+          }).formatToParts(date);
+          const offsetPart = parts.find(p => p.type === 'timeZoneName');
+          if (offsetPart) {
+              const val = offsetPart.value; // e.g. "GMT+5", "GMT-04:00"
+              const m = val.match(/GMT([+-]\d+)(?::?(\d+))?/);
+              if (m) {
+                  const hours = parseInt(m[1], 10);
+                  const minutes = m[2] ? parseInt(m[2], 10) : 0;
+                  return hours + (hours >= 0 ? minutes / 60 : -minutes / 60);
+              }
+          }
+      } catch (e) {}
+      
+      return 5; // Fallback to PKT
+  }
+
+  function formatTime12Hour(hours, minutes) {
+      hours = (hours % 24 + 24) % 24; // clean wrap
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      const h12 = Math.floor(hours % 12) || 12;
+      const mStr = String(Math.round(minutes)).padStart(2, '0');
+      return `${String(h12).padStart(2, '0')}:${mStr} ${ampm}`;
+  }
+
+  function convertTimezone(timeString, sourceTz, targetTz) {
+      if (!timeString) return '';
+      const [h, m] = timeString.split(':').map(Number);
+      if (isNaN(h) || isNaN(m)) return '';
+      
+      const sourceOffset = getOffsetHours(sourceTz);
+      const targetOffset = getOffsetHours(targetTz);
+      
+      // Convert to UTC hours first
+      const utcHours = h + m / 60 - sourceOffset;
+      
+      // Convert to target timezone
+      const targetHours = utcHours + targetOffset;
+      
+      // Separate hours and minutes
+      const wholeHours = Math.floor(targetHours);
+      const fractionalMinutes = (targetHours - wholeHours) * 60;
+      
+      return formatTime12Hour(wholeHours, fractionalMinutes);
+  }
+
+  window.updateScheduleConversions = function() {
+      const studentTzInput = document.getElementById('student_timezone');
+      const studentTz = studentTzInput ? studentTzInput.value : 'UTC';
+      
+      const teacherSelect = document.getElementById('teacher_select');
+      let teacherTz = 'PKT';
+      if (teacherSelect && teacherSelect.selectedOptions.length > 0) {
+          const selectedOpt = teacherSelect.selectedOptions[0];
+          teacherTz = selectedOpt.getAttribute('data-timezone') || 'PKT';
+      }
+      
+      const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+      days.forEach(day => {
+          const enabledCheckbox = document.getElementById(day + '_enabled');
+          const timeInput = document.getElementById(day + '_time');
+          
+          const badge = document.getElementById(day + '_badge');
+          const indicator = document.getElementById(day + '_status_indicator');
+          
+          const studentDisplay = document.getElementById(day + '_student_local_display');
+          const teacherDisplay = document.getElementById(day + '_teacher_display');
+          const pakistanDisplay = document.getElementById(day + '_pakistan_display');
+          const pktHiddenInput = document.getElementById(day + '_pkt');
+          
+          const isEnabled = enabledCheckbox ? enabledCheckbox.checked : false;
+          
+          // Update Card visual style based on status
+          if (isEnabled) {
+              if (badge) {
+                  badge.innerText = 'Active';
+                  badge.className = 'bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-widest';
+              }
+              if (indicator) {
+                  indicator.className = 'absolute top-0 left-0 w-2 h-full bg-emerald-500 transition-colors duration-300';
+              }
+          } else {
+              if (badge) {
+                  badge.innerText = 'Inactive';
+                  badge.className = 'bg-slate-100 text-slate-500 px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-widest';
+              }
+              if (indicator) {
+                  indicator.className = 'absolute top-0 left-0 w-2 h-full bg-slate-300 transition-colors duration-300';
+              }
+          }
+          
+          const timeVal = timeInput ? timeInput.value : '';
+          if (timeVal) {
+              // Student Local Time is simply the student's selected time formatted nicely
+              const [sh, sm] = timeVal.split(':').map(Number);
+              const studentFormatted = formatTime12Hour(sh, sm);
+              if (studentDisplay) studentDisplay.innerText = studentFormatted;
+              
+              // Teacher Time (Auto)
+              const teacherTime = convertTimezone(timeVal, studentTz, teacherTz);
+              if (teacherDisplay) teacherDisplay.innerText = teacherTime || '-';
+              
+              // Pakistan Time (Auto)
+              const pakistanTime = convertTimezone(timeVal, studentTz, 'PKT');
+              if (pakistanDisplay) pakistanDisplay.innerText = pakistanTime || '-';
+              if (pktHiddenInput) pktHiddenInput.value = pakistanTime || '';
+          } else {
+              if (studentDisplay) studentDisplay.innerText = '-';
+              if (teacherDisplay) teacherDisplay.innerText = '-';
+              if (pakistanDisplay) pakistanDisplay.innerText = '-';
+              if (pktHiddenInput) pktHiddenInput.value = '';
+          }
+      });
+  }
+
+  // Course Custom Toggle
+  window.toggleCustomCourse = function() {
+      const select = document.getElementById('course_select');
+      const container = document.getElementById('custom_course_container');
+      if (select && container) {
+          if (select.value === 'Other') {
+              container.classList.remove('hidden');
+          } else {
+              container.classList.add('hidden');
+              document.getElementById('custom_course_input').value = '';
+          }
+      }
+  };
+  
+  const countryMapping = {
+      'united kingdom': { currency: 'GBP', timezone: 'BST' },
+      'uk': { currency: 'GBP', timezone: 'BST' },
+      'england': { currency: 'GBP', timezone: 'BST' },
+      'gbp': { currency: 'GBP', timezone: 'BST' },
+      'usa': { currency: 'USD', timezone: 'EST' },
+      'united states': { currency: 'USD', timezone: 'EST' },
+      'united states of america': { currency: 'USD', timezone: 'EST' },
+      'usd': { currency: 'USD', timezone: 'EST' },
+      'canada': { currency: 'CAD', timezone: 'EST' },
+      'cad': { currency: 'CAD', timezone: 'EST' },
+      'australia': { currency: 'AUD', timezone: 'AEST' },
+      'aud': { currency: 'AUD', timezone: 'AEST' },
+      'saudi arabia': { currency: 'SAR', timezone: 'AST' },
+      'saudi': { currency: 'SAR', timezone: 'AST' },
+      'sar': { currency: 'SAR', timezone: 'AST' },
+      'uae': { currency: 'AED', timezone: 'GST' },
+      'united arab emirates': { currency: 'AED', timezone: 'GST' },
+      'dubai': { currency: 'AED', timezone: 'GST' },
+      'pakistan': { currency: 'PKR', timezone: 'PKT' },
+      'pkr': { currency: 'PKR', timezone: 'PKT' }
+  };
+
+  window.handleCountryInput = function() {
+      const countryInput = document.querySelector('input[name="country"]');
+      if (!countryInput) return;
+      
+      const countryVal = countryInput.value.trim().toLowerCase();
+      const currencyInput = document.querySelector('input[name="currency"]');
+      const timezoneInput = document.getElementById('student_timezone');
+      
+      if (countryMapping[countryVal]) {
+          const config = countryMapping[countryVal];
+          if (currencyInput) {
+              currencyInput.value = config.currency;
+          }
+          if (timezoneInput) {
+              timezoneInput.value = config.timezone;
+              if (typeof window.updateScheduleConversions === 'function') {
+                  window.updateScheduleConversions();
+              }
+          }
+      } else {
+          // Try fuzzy/partial matching
+          for (const [key, config] of Object.entries(countryMapping)) {
+              if (countryVal.includes(key) || key.includes(countryVal)) {
+                  if (currencyInput) currencyInput.value = config.currency;
+                  if (timezoneInput) {
+                      timezoneInput.value = config.timezone;
+                      if (typeof window.updateScheduleConversions === 'function') {
+                          window.updateScheduleConversions();
+                      }
+                  }
+                  break;
+              }
+          }
+      }
+  };
+
+  window.updateCalculatedAge = function() {
+      const dobInput = document.querySelector('input[name="dob"]');
+      const ageDisplay = document.getElementById('calculated_age_display');
+      if (!dobInput || !ageDisplay) return;
+      
+      const dobValue = dobInput.value;
+      if (!dobValue) {
+          ageDisplay.innerText = '0 Years';
+          return;
+      }
+      
+      const dob = new Date(dobValue);
+      const today = new Date();
+      if (isNaN(dob.getTime())) {
+          ageDisplay.innerText = '0 Years';
+          return;
+      }
+      
+      let age = today.getFullYear() - dob.getFullYear();
+      const monthDiff = today.getMonth() - dob.getMonth();
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
+          age--;
+      }
+      
+      if (age < 0) age = 0;
+      ageDisplay.innerText = age + ' Years';
+  };
+
+  // Initialization
+  document.addEventListener('DOMContentLoaded', () => {
+      setTimeout(() => {
+          if(typeof window.toggleCustomCourse === 'function') window.toggleCustomCourse();
+          if(typeof window.updateScheduleConversions === 'function') window.updateScheduleConversions();
+          if(typeof window.handleCountryInput === 'function') window.handleCountryInput();
+          if(typeof window.updateCalculatedAge === 'function') window.updateCalculatedAge();
+      }, 500);
+
+      const countryInput = document.querySelector('input[name="country"]');
+      if (countryInput) {
+          countryInput.addEventListener('input', () => {
+              window.handleCountryInput();
+              window.updateScheduleConversions();
+          });
+          countryInput.addEventListener('change', () => {
+              window.handleCountryInput();
+              window.updateScheduleConversions();
+          });
+      }
+
+      const dobInput = document.querySelector('input[name="dob"]');
+      if (dobInput) {
+          dobInput.addEventListener('input', () => window.updateCalculatedAge());
+          dobInput.addEventListener('change', () => window.updateCalculatedAge());
+      }
+
+      const step4 = document.getElementById('step-4');
+      if (step4) {
+          step4.addEventListener('input', () => window.updateScheduleConversions());
+          step4.addEventListener('change', () => window.updateScheduleConversions());
+      }
+      const studentTz = document.getElementById('student_timezone');
+      if (studentTz) {
+          studentTz.addEventListener('input', () => window.updateScheduleConversions());
+          studentTz.addEventListener('change', () => window.updateScheduleConversions());
+      }
+      const teacherSel = document.getElementById('teacher_select');
+      if (teacherSel) {
+          teacherSel.addEventListener('change', () => window.updateScheduleConversions());
+      }
+
+      // Add direct change listeners to all time slots
+      document.querySelectorAll('input[type="time"]').forEach(input => {
+          input.addEventListener('input', () => window.updateScheduleConversions());
+          input.addEventListener('change', () => window.updateScheduleConversions());
+      });
+
+      setInterval(() => {
+          if(typeof window.updateScheduleConversions === 'function') window.updateScheduleConversions();
+      }, 500);
+  });
+
+  if (typeof lucide !== 'undefined') {
+    lucide.createIcons();
+  }
+
+  
+  // --- Professional UI Features ---
+
+  // Live Validation
+  const inputs = document.querySelectorAll('input[required], select[required]');
+  inputs.forEach(input => {
+      input.addEventListener('input', () => {
+          if (input.checkValidity()) {
+              input.classList.remove('border-rose-400');
+              input.classList.add('border-emerald-400');
+          } else {
+              input.classList.remove('border-emerald-400');
+              input.classList.add('border-rose-400');
+          }
+      });
+  });
+
+  let hasUnsavedChanges = false;
+  const editForm = document.getElementById('admissionForm');
+  if (editForm) {
+      editForm.addEventListener('input', () => hasUnsavedChanges = true);
+      editForm.addEventListener('submit', () => {
+          hasUnsavedChanges = false;
+          window.onbeforeunload = null;
+      });
+  }
+
+  window.onbeforeunload = (e) => {
+      if (hasUnsavedChanges) {
+          e.preventDefault();
+          e.returnValue = '';
+      }
+  };
+
+  // Success/Error Animation Helpers
+  window.showSuccessAnimation = async function(event) {
+      const form = document.getElementById('admissionForm');
+      if (!form.checkValidity()) {
+          return; // Let the browser handle validation tooltips
+      }
+      
+      if (event) {
+          event.preventDefault();
+      }
+      
+      const overlay = document.createElement('div');
+      overlay.className = 'fixed inset-0 bg-white/80 backdrop-blur-sm z-50 flex items-center justify-center transition-all opacity-0';
+      overlay.innerHTML = '<div class="bg-emerald-500 text-white p-8 rounded-3xl shadow-2xl flex flex-col items-center transform scale-75 transition-transform"><i data-lucide="check-circle" class="w-16 h-16 mb-4"></i><h2 class="text-2xl font-black">Update Successful</h2></div>';
+      document.body.appendChild(overlay);
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+      requestAnimationFrame(() => {
+          overlay.classList.remove('opacity-0');
+          overlay.querySelector('div').classList.remove('scale-75');
+      });
+      
+      try {
+          window.onbeforeunload = null;
+          const formData = new FormData(form);
+          let fetchUrl = form.action || window.location.href;
+          const token = localStorage.getItem('alfoz_session_token');
+          if (token && !fetchUrl.includes('alfoz_session_token')) {
+              const sep = fetchUrl.includes('?') ? '&' : '?';
+              fetchUrl += sep + 'alfoz_session_token=' + encodeURIComponent(token);
+          }
+
+          const response = await fetch(fetchUrl, {
+              method: 'POST',
+              body: formData,
+              headers: { 'Accept': 'application/json' }
+          });
+          let result = {};
+          try { result = await response.json(); } catch(e) {}
+          setTimeout(() => {
+              if (result && result.redirect) {
+                  let redirectUrl = result.redirect;
+                  if (token && !redirectUrl.includes('alfoz_session_token')) {
+                      const sep = redirectUrl.includes('?') ? '&' : '?';
+                      redirectUrl += sep + 'alfoz_session_token=' + encodeURIComponent(token);
+                  }
+                  window.location.href = redirectUrl;
+              } else {
+                  window.location.reload();
+              }
+          }, 800);
+      } catch (err) {
+          alert('Network error occurred.');
+          const btn = document.getElementById('btn-submit');
+          if (btn) { btn.innerHTML = 'Retry'; btn.disabled = false; }
+      }
+
+  };
+
+  
+  // --- Prefill Data for Edit Mode ---
+  if (window.STUDENT_DATA) {
+      setTimeout(() => {
+          const s = window.STUDENT_DATA;
+          const form = document.getElementById('admissionForm');
+          if (form && s) {
+              for (const key in s) {
+                  const el = form.elements[key];
+                  if (el) {
+                      if (el.type === 'checkbox') {
+                          el.checked = (s[key] === '1' || s[key] === true || s[key] === 'on');
+                      } else if (el.type !== 'file') {
+                          el.value = s[key];
+                      }
+                  }
+              }
+              // Trigger custom course toggle if needed
+              if(typeof window.toggleCustomCourse === 'function') window.toggleCustomCourse();
+              if(typeof window.updateScheduleConversions === 'function') window.updateScheduleConversions();
+          }
+      }, 100);
+  }
+
+  // Wizard Logic
+  document.addEventListener('DOMContentLoaded', () => {
+      const totalSteps = 5;
+      let currentStep = 1;
+      const stepTitles = [
+          "Identity",
+          "Contact",
+          "Academic",
+          "Schedule",
+          "Financials"
+      ];
+
+      const updateUI = () => {
+          let indicatorHTML = '';
+          for(let i=1; i<=totalSteps; i++) {
+              const isCompleted = i < currentStep;
+              const isActive = i === currentStep;
+              
+              let bgClass = 'bg-primary/5 text-primary/40 border border-primary/10';
+              if (isActive) bgClass = 'bg-primary text-white shadow-md transform scale-105';
+              else if (isCompleted) bgClass = 'bg-emerald-500 text-white shadow-sm';
+
+              indicatorHTML += '<div class="flex items-center gap-1.5 shrink-0">';
+              indicatorHTML += '  <div class="px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ' + bgClass + ' flex items-center gap-1.5 cursor-pointer" onclick="goToStep('+i+')">';
+              indicatorHTML +=      (isCompleted ? '<i data-lucide="check" class="w-3 h-3"></i>' : '') + i + '. ' + stepTitles[i-1];
+              indicatorHTML += '  </div>';
+              indicatorHTML +=    (i < totalSteps ? '<i data-lucide="chevron-right" class="w-3 h-3 text-primary/20 shrink-0"></i>' : '');
+              indicatorHTML += '</div>';
+          }
+          document.getElementById('wizard-steps-indicator').innerHTML = indicatorHTML;
+          
+          if (typeof lucide !== 'undefined') {
+            lucide.createIcons();
+          }
+
+          // Show/Hide steps
+          for(let i=1; i<=totalSteps; i++) {
+              const el = document.getElementById('step-'+i);
+              if(el) {
+                  if(i === currentStep) {
+                      el.classList.remove('hidden');
+                  } else {
+                      el.classList.add('hidden');
+                  }
+              }
+          }
+
+          // Update buttons
+          document.getElementById('btn-prev').classList.toggle('hidden', currentStep === 1);
+          window.goToStep = function(step) {
+          if (step >= 1 && step <= currentStep || step <= totalSteps) { // allow jumping to any previous step, or maybe any step if we don't strict validate here
+              currentStep = step;
+              updateUI();
+          }
+      };
+
+      document.getElementById('btn-next').classList.toggle('hidden', currentStep === totalSteps);
+          document.getElementById('btn-submit').classList.toggle('hidden', currentStep !== totalSteps);
+          
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+      };
+
+      document.getElementById('btn-next').addEventListener('click', () => {
+          if (currentStep < totalSteps) {
+              currentStep++;
+              updateUI();
+          }
+      });
+
+      document.getElementById('btn-prev').addEventListener('click', () => {
+          if (currentStep > 1) {
+              currentStep--;
+              updateUI();
+          }
+      });
+
+      updateUI();
+  });
+</script>
+</body></html>

@@ -1,0 +1,8 @@
+/* Al Foz Islamic Institute - Attendance Today Page Styling */
+.realtime-pulse {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background-color: #10b981;
+  border-radius: 50%;
+}

@@ -1,0 +1,21 @@
+/**
+ * Al Foz Islamic Institute - Students Management CSS
+ */
+
+.page-transition {
+    animation: fadeIn 0.4s ease-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Custom Table Styles */
+.registry-table tr {
+    transition: all 0.2s ease;
+}
+
+.registry-table tr:hover {
+    background-color: rgba(24, 77, 85, 0.02);
+}

@@ -1,0 +1,6 @@
+/* Al Foz Islamic Institute - Makeup Classes Page Styling */
+.makeup-badge {
+  background-color: rgba(24, 77, 85, 0.1);
+  color: var(--primary-color, #184D55);
+  font-weight: 600;
+}

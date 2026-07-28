@@ -1,0 +1,21 @@
+/**
+ * Al Foz Islamic Institute - Student Profile Specific Styles
+ */
+
+.profile-card {
+    background: linear-gradient(135deg, #184D55 0%, #0D2B30 100%);
+}
+
+.stat-card-glow {
+    box-shadow: 0 0 20px rgba(24, 77, 85, 0.08);
+}
+
+.timeline-line::before {
+    content: '';
+    position: absolute;
+    left: 19px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: rgba(24, 77, 85, 0.1);
+}

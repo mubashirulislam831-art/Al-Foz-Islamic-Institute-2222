@@ -1,0 +1,9 @@
+/* Al Foz Islamic Institute - Teacher Profile styling */
+.teacher-profile-header {
+  border-bottom: 2px solid rgba(24, 77, 85, 0.05);
+}
+.qualification-pill {
+  background-color: rgba(24, 77, 85, 0.08);
+  color: var(--primary-color);
+  font-size: 0.75rem;
+}

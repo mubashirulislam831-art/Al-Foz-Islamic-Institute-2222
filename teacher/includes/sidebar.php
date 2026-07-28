@@ -1,0 +1,134 @@
+<?php
+/**
+ * Al Foz Islamic Institute - Teacher ERP Sidebar
+ */
+require_once __DIR__ . '/../../includes/functions.php';
+
+$role = isset($_SESSION['role']) ? $_SESSION['role'] : '';
+
+// Ensure only 'teacher' or 'Teacher' can load this sidebar
+if (strtolower($role) !== 'teacher') {
+    return; // Do not load
+}
+
+$current_page = $_SERVER['SCRIPT_NAME']; 
+
+function is_teacher_parent_active($folder, $current_page) {
+    return strpos($current_page, $folder) !== false;
+}
+?>
+<aside class="erp-sidebar w-[260px] bg-white text-primary h-screen sticky top-0 flex flex-col border-r border-primary/10 shrink-0 shadow-[4px_0_24px_rgba(24,77,85,0.05)] transition-all duration-300">
+  <!-- Logo/Branding Header -->
+  <a href="/" class="p-6 border-b border-primary/10 flex items-center gap-3 bg-transparent group shrink-0">
+    <div class="w-10 h-10 rounded-xl overflow-hidden flex items-center justify-center shrink-0">
+      <img src="/assets/logo.png" alt="Al Foz Logo" class="w-full h-full object-cover" referrerPolicy="no-referrer">
+    </div>
+    <div class="logo-text overflow-hidden transition-all duration-300 whitespace-nowrap">
+      <h1 class="font-bold text-[14px] tracking-wide text-primary leading-tight">Al Foz</h1>
+      <span class="text-[9px] font-bold uppercase tracking-widest block leading-tight mt-0.5" style="color: #184D55 !important; opacity: 0.8;">TEACHER PORTAL</span>
+    </div>
+  </a>
+
+  <!-- User Profile Section -->
+  <div class="p-6 border-b border-primary/10 flex items-center gap-4 bg-transparent shrink-0">
+    <?php echo render_sidebar_profile_pic_html(); ?>
+    <div class="profile-text overflow-hidden transition-all duration-300 whitespace-nowrap">
+      <h2 class="font-bold text-[10px] tracking-wide text-primary truncate"><?php echo htmlspecialchars($_SESSION['name'] ?? 'Teacher'); ?></h2>
+      <span class="text-[9px] font-bold text-primary/60 uppercase tracking-widest block mt-0.5"><?php echo render_user_role_title_html(); ?></span>
+    </div>
+  </div>
+
+  <!-- Dynamic Menu Items -->
+  <nav class="py-4 flex flex-col gap-1 text-[10px] bg-transparent flex-1 overflow-y-auto">
+    <span class="core-portal-label px-6 py-2 text-[10px] font-bold text-primary/45 uppercase tracking-widest block shrink-0">Teacher Portal</span>
+
+    <a href="/teacher/dashboard.php" title="Dashboard" class="flex items-center gap-3 px-4 py-2.5 transition-all <?php echo ($current_page === '/teacher/dashboard.php') ? 'active-link' : 'font-medium'; ?>">
+      <i data-lucide="layout-dashboard" class="w-4.5 h-4.5 shrink-0"></i> <span class="nav-text whitespace-nowrap">Dashboard</span>
+    </a>
+    
+    <a href="/teacher/profile.php" title="My Profile" class="flex items-center gap-3 px-4 py-2.5 transition-all <?php echo is_teacher_parent_active('/teacher/profile', $current_page) ? 'active-link' : 'font-medium'; ?>">
+      <i data-lucide="user-round" class="w-4.5 h-4.5 shrink-0"></i> <span class="nav-text whitespace-nowrap">My Profile</span>
+    </a>
+
+    <a href="/teacher/students.php" title="My Students" class="flex items-center gap-3 px-4 py-2.5 transition-all <?php echo is_teacher_parent_active('/teacher/students', $current_page) ? 'active-link' : 'font-medium'; ?>">
+      <i data-lucide="graduation-cap" class="w-4.5 h-4.5 shrink-0"></i> <span class="nav-text whitespace-nowrap">My Students</span>
+    </a>
+
+    <a href="/teacher/my_attendance.php" title="My Attendance" class="flex items-center gap-3 px-4 py-2.5 transition-all <?php echo ($current_page === '/teacher/my_attendance.php') ? 'active-link' : 'font-medium'; ?>">
+      <i data-lucide="calendar-heart" class="w-4.5 h-4.5 shrink-0"></i> <span class="nav-text whitespace-nowrap">My Attendance</span>
+    </a>
+
+    <!-- Attendance Management Dropdown -->
+    <div class="sidebar-dropdown">
+      <button onclick="toggleSidebarDropdown('teacherAttendanceDropdown', this)" title="Attendance ERP" class="w-full flex items-center justify-between px-4 py-2.5 transition-all <?php echo is_teacher_parent_active('/teacher/attendance/', $current_page) ? 'active-link' : 'font-medium'; ?>">
+        <div class="flex items-center gap-3">
+          <i data-lucide="calendar-check" class="w-4.5 h-4.5 shrink-0"></i> <span class="font-medium nav-text whitespace-nowrap">Attendance ERP</span>
+        </div>
+        <i data-lucide="chevron-down" class="sidebar-dropdown-icon w-4 h-4 opacity-70 transition-transform duration-200 <?php echo is_teacher_parent_active('/teacher/attendance/', $current_page) ? 'rotate-180' : ''; ?>"></i>
+      </button>
+      <div id="teacherAttendanceDropdown" data-title="Attendance ERP" class="sidebar-dropdown-content flex flex-col gap-1 pl-12 pr-2 py-1 overflow-hidden transition-all duration-300 <?php echo is_teacher_parent_active('/teacher/attendance/', $current_page) ? 'open' : ''; ?>">
+        <a href="/teacher/attendance/today_attendance.php" title="Today's Attendance" class="py-2 px-3 text-[11px] transition-all duration-200 <?php echo ($current_page === '/teacher/attendance/today_attendance.php') ? 'active-link' : ''; ?>">Today's Attendance</a>
+        <a href="/teacher/attendance/monthly_attendance.php" title="Monthly Attendance" class="py-2 px-3 text-[11px] transition-all duration-200 <?php echo ($current_page === '/teacher/attendance/monthly_attendance.php') ? 'active-link' : ''; ?>">Monthly Attendance</a>
+      </div>
+    </div>
+
+    <a href="/teacher/schedule.php" title="Schedule" class="flex items-center gap-3 px-4 py-2.5 transition-all <?php echo is_teacher_parent_active('/teacher/schedule', $current_page) ? 'active-link' : 'font-medium'; ?>">
+      <i data-lucide="clock" class="w-4.5 h-4.5 shrink-0"></i> <span class="nav-text whitespace-nowrap">Schedule</span>
+    </a>
+
+    <a href="/teacher/homework.php" title="Homework" class="flex items-center gap-3 px-4 py-2.5 transition-all <?php echo is_teacher_parent_active('/teacher/homework', $current_page) ? 'active-link' : 'font-medium'; ?>">
+      <i data-lucide="book-open" class="w-4.5 h-4.5 shrink-0"></i> <span class="nav-text whitespace-nowrap">Homework</span>
+    </a>
+
+    <a href="/teacher/exams.php" title="Exams" class="flex items-center gap-3 px-4 py-2.5 transition-all <?php echo is_teacher_parent_active('/teacher/exams', $current_page) ? 'active-link' : 'font-medium'; ?>">
+      <i data-lucide="file-text" class="w-4.5 h-4.5 shrink-0"></i> <span class="nav-text whitespace-nowrap">Exams</span>
+    </a>
+
+    <a href="/teacher/reports.php" title="Reports" class="flex items-center gap-3 px-4 py-2.5 transition-all <?php echo is_teacher_parent_active('/teacher/reports', $current_page) ? 'active-link' : 'font-medium'; ?>">
+      <i data-lucide="bar-chart-3" class="w-4.5 h-4.5 shrink-0"></i> <span class="nav-text whitespace-nowrap">Reports</span>
+    </a>
+
+    <a href="/teacher/salary.php" title="Salary" class="flex items-center gap-3 px-4 py-2.5 transition-all <?php echo is_teacher_parent_active('/teacher/salary', $current_page) ? 'active-link' : 'font-medium'; ?>">
+      <i data-lucide="credit-card" class="w-4.5 h-4.5 shrink-0"></i> <span class="nav-text whitespace-nowrap">Salary</span>
+    </a>
+
+    <a href="/teacher/notifications.php" title="Notifications" class="flex items-center gap-3 px-4 py-2.5 transition-all <?php echo is_teacher_parent_active('/teacher/notifications', $current_page) ? 'active-link' : 'font-medium'; ?>">
+      <i data-lucide="bell" class="w-4.5 h-4.5 shrink-0"></i> <span class="nav-text whitespace-nowrap">Notifications</span>
+    </a>
+
+    <a href="/teacher/messages.php" title="Messages" class="flex items-center gap-3 px-4 py-2.5 transition-all <?php echo is_teacher_parent_active('/teacher/messages', $current_page) ? 'active-link' : 'font-medium'; ?>">
+      <i data-lucide="message-square" class="w-4.5 h-4.5 shrink-0"></i> <span class="nav-text whitespace-nowrap">Messages</span>
+    </a>
+
+    <a href="/teacher/settings.php" title="Settings" class="flex items-center gap-3 px-4 py-2.5 transition-all <?php echo is_teacher_parent_active('/teacher/settings', $current_page) ? 'active-link' : 'font-medium'; ?>">
+      <i data-lucide="settings" class="w-4.5 h-4.5 shrink-0"></i> <span class="nav-text whitespace-nowrap">Settings</span>
+    </a>
+
+    <a href="/auth/logout.php" title="Logout" class="flex items-center gap-3 px-4 py-2.5 transition-all hover:bg-primary/5 font-medium">
+      <i data-lucide="log-out" class="w-4.5 h-4.5 shrink-0"></i> <span class="nav-text whitespace-nowrap">Logout</span>
+    </a>
+  </nav>
+
+  <!-- Sidebar Footer -->
+  <div class="p-4 border-t border-primary/10 text-center bg-primary/5 shrink-0">
+    <a href="/" class="text-[10px] font-bold text-primary/80 hover:text-primary uppercase tracking-wider block transition-all flex items-center justify-center gap-1.5">
+      <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i> Back to Website
+    </a>
+  </div>
+</aside>
+
+<script>
+function toggleSidebarDropdown(dropdownId, buttonEl) {
+  var dropdown = document.getElementById(dropdownId);
+  if (dropdown) {
+    dropdown.classList.toggle('open');
+  }
+  if (buttonEl) {
+    var icon = buttonEl.querySelector('.sidebar-dropdown-icon') || buttonEl.querySelector('[data-lucide="chevron-down"]');
+    if (icon) {
+      icon.classList.toggle('rotate-180');
+    }
+  }
+}
+</script>
+

@@ -1,0 +1,6 @@
+/* Al Foz Islamic Institute - Attendance Reports Page Styling */
+.report-status-pill {
+  border-radius: 9999px;
+  font-weight: 700;
+  text-transform: uppercase;
+}

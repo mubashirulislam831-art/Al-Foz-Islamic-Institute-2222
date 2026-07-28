@@ -1,0 +1,5 @@
+/* Al Foz Islamic Institute - Monthly Reports Page Styling */
+.monthly-reports-grid {
+  display: grid;
+  gap: 1rem;
+}

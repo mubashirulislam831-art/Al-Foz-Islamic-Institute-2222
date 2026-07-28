@@ -1,0 +1,6 @@
+{
+  "name": "Al Foz Islamic Institute",
+  "description": "Al Foz Islamic Institute is an ultra-premium, production-ready online Islamic educational academy with world-class curriculum in Quran Quranic Studies, Tajweed, Arabic Language, and Islamic Studies.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

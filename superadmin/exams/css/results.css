@@ -1,0 +1,5 @@
+/* Al Foz Islamic Institute - Exam Results Page Styling */
+.results-table-header {
+  background-color: var(--primary-color);
+  color: #ffffff;
+}

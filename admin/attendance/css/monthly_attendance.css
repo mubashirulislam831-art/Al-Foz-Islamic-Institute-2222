@@ -1,0 +1,17 @@
+/* Al Foz Islamic Institute - Monthly Attendance styling */
+.attendance-grid {
+  display: grid;
+  grid-template-columns: repeat(32, minmax(30px, 1fr));
+  gap: 2px;
+}
+.attendance-day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  font-size: 0.75rem;
+  border-radius: 4px;
+}
+.attendance-present { background-color: #d1fae5; color: #065f46; }
+.attendance-absent { background-color: #fee2e2; color: #991b1b; }
+.attendance-leave { background-color: #fef3c7; color: #92400e; }

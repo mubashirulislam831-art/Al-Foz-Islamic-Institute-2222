@@ -1,0 +1,12 @@
+/* Al Foz Islamic Institute - Certificates styling */
+.certificate-border {
+  border: 10px double var(--primary-color, #184D55);
+  padding: 2.5rem;
+  background-color: #f7faff;
+  text-align: center;
+}
+.certificate-title {
+  font-family: 'Poppins', sans-serif;
+  color: var(--primary-color);
+  font-weight: 700;
+}

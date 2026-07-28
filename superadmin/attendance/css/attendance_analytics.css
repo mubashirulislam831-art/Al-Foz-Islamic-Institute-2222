@@ -1,0 +1,7 @@
+/* Al Foz Islamic Institute - Attendance Analytics Page Styling */
+.attendance-chart-legend {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  font-size: 0.875rem;
+}

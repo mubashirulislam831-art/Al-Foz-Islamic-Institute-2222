@@ -1,0 +1,21 @@
+/* Al Foz Islamic Institute - Invoices styling */
+.invoice-container {
+  max-width: 800px;
+  background-color: #ffffff;
+  padding: 3rem;
+  border: 1px solid rgba(24, 77, 85, 0.1);
+  border-radius: 1rem;
+}
+.invoice-header {
+  border-bottom: 2px solid var(--primary-color);
+  padding-bottom: 1.5rem;
+}
+.invoice-table {
+  width: 100%;
+  margin-top: 2rem;
+  border-collapse: collapse;
+}
+.invoice-table th, .invoice-table td {
+  padding: 0.75rem;
+  border-bottom: 1px solid rgba(24, 77, 85, 0.05);
+}

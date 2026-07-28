@@ -1,0 +1,4 @@
+/* Al Foz Islamic Institute - Edit Student Page Styling */
+.student-edit-card {
+  border-top: 4px solid var(--primary-color, #184D55);
+}

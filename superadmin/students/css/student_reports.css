@@ -1,0 +1,10 @@
+/* Al Foz Islamic Institute - Student Reports styling */
+.report-grid {
+  display: grid;
+  gap: 1.5rem;
+}
+.report-chart-container {
+  min-height: 300px;
+  background-color: #ffffff;
+  border-radius: 1rem;
+}

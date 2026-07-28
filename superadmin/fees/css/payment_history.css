@@ -1,0 +1,5 @@
+/* Al Foz Islamic Institute - Payment History Page Styling */
+.payment-timeline {
+  position: relative;
+  border-left: 2px solid rgba(24, 77, 85, 0.1);
+}

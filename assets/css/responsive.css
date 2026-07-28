@@ -1,0 +1,237 @@
+/* Al Foz Islamic Institute - Comprehensive Responsive System Override */
+
+/* --- 1. Global Safety Boundaries & Layout Flow --- */
+* {
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+body {
+  overflow-x: hidden !important;
+  width: 100% !important;
+  max-width: 100vw !important;
+}
+
+/* Fluid scale wrapper for the entire page container */
+div.flex.min-h-screen.w-full {
+  max-width: 100vw !important;
+  overflow-x: visible !important;
+}
+
+@media (max-width: 1024px) {
+  div.flex.min-h-screen.w-full {
+    display: block !important;
+    width: 100% !important;
+  }
+  
+  /* Force main content container to take full width */
+  .flex-grow {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    padding-left: 0.5rem !important;
+    padding-right: 0.5rem !important;
+  }
+  
+  .p-5, .p-6, .p-8 {
+    padding: 1rem !important;
+  }
+}
+
+@media (max-width: 375px) {
+  .flex-grow {
+    padding-left: 0.25rem !important;
+    padding-right: 0.25rem !important;
+  }
+  
+  .p-5, .p-6, .p-8 {
+    padding: 0.75rem !important;
+  }
+}
+
+/* --- 2. Fluid Responsive Typography & Spacing --- */
+@media (max-width: 768px) {
+  /* Fluid responsive display sizes for clean typography layout */
+  .text-3xl, .text-4xl, .text-5xl, h1:not(.logo-text h1) {
+    font-size: 1.5rem !important;
+    line-height: 1.2 !important;
+    letter-spacing: -0.02em !important;
+  }
+  .text-2xl, h2 {
+    font-size: 1.25rem !important;
+    line-height: 1.25 !important;
+  }
+  .text-xl, h3 {
+    font-size: 1.1rem !important;
+  }
+  .text-lg, h4 {
+    font-size: 1rem !important;
+  }
+}
+
+@media (max-width: 375px) {
+  .text-3xl, .text-4xl, .text-5xl, h1:not(.logo-text h1) {
+    font-size: 1.35rem !important;
+  }
+  .text-2xl, h2 {
+    font-size: 1.15rem !important;
+  }
+  .text-base {
+    font-size: 13px !important;
+  }
+}
+
+/* --- 3. Responsive Grids & Flex Stacking --- */
+@media (max-width: 640px) {
+  /* Forms and major grids must stack into a single column on mobile */
+  .grid-cols-2, .grid-cols-3, .grid-cols-4, .grid-cols-5, .grid-cols-6 {
+    grid-template-columns: repeat(1, minmax(0, 1fr)) !important;
+    gap: 12px !important;
+  }
+  
+  /* Exception: Keep 2 columns for micro-action grids or tiny stats if explicitly desired */
+  .keep-cols, .micro-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  
+
+}
+
+@media (min-width: 641px) and (max-width: 1024px) {
+  /* Balanced mid-width grids for tablets */
+  .grid-cols-3, .grid-cols-4, .grid-cols-5, .grid-cols-6 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 16px !important;
+  }
+}
+
+/* --- 4. Touch-Friendly Click Targets (44px Rule) --- */
+@media (max-width: 1024px) {
+  /* Give all inputs and selects touch-friendly height */
+  input[type="text"], 
+  input[type="email"], 
+  input[type="password"], 
+  input[type="tel"], 
+  input[type="date"], 
+  input[type="time"], 
+  input[type="number"], 
+  select {
+    min-height: 44px !important;
+    font-size: 14px !important; /* Prevents iOS auto-zooming on focus */
+  }
+
+  /* Make sure all primary buttons and links are at least 44px tall */
+  button:not(.hidden), 
+  .btn:not(.hidden), 
+  .btn-primary:not(.hidden), 
+  .btn-outline:not(.hidden),
+  a.px-4:not(.hidden),
+  a.px-5:not(.hidden),
+  a[class*="bg-"]:not(.hidden),
+  form button:not(.hidden),
+  form input[type="submit"]:not(.hidden),
+  form input[type="button"]:not(.hidden) {
+    min-height: 44px !important;
+    padding-top: 0.6rem !important;
+    padding-bottom: 0.6rem !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+}
+
+/* --- 5. Compact, Perfect-Fit Mobile Header --- */
+@media (max-width: 768px) {
+  header {
+    padding: 0.6rem 0.75rem !important;
+    margin-bottom: 1rem !important;
+    gap: 8px !important;
+    flex-wrap: wrap !important;
+  }
+  
+  header #realtime-clock {
+    display: none !important; /* Conserve space on small tablets/phones */
+  }
+  
+  /* Hide calendar icon and make date selector compact */
+  header div[title="Select System Date Context"] {
+    padding: 0.25rem 0.5rem !important;
+  }
+  
+  header div[title="Select System Date Context"] svg {
+    display: none !important;
+  }
+  
+  /* Hide username and make the role pill micro size */
+  header .text-right {
+    display: none !important; /* Rely on role-icon or sidebar for profile details */
+  }
+  
+  /* Scale sign out button down */
+  header a[href*="logout.php"] {
+    padding: 0.5rem !important;
+    min-height: 38px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .compact-hide {
+    display: none !important;
+  }
+}
+
+/* --- 6. Scroll-Friendly Tables & Custom Scrollbars --- */
+.table-responsive, .overflow-x-auto, [class*="overflow-x"] {
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 1024px) {
+  /* Prevent tables from collapsing their cells, maintaining legible structure */
+  table {
+    min-width: 750px !important;
+  }
+}
+
+/* Custom premium thin scrollbar for horizontal panels on touch devices */
+.custom-horizontal-scrollbar, .overflow-x-auto {
+  scrollbar-width: thin !important;
+  scrollbar-color: rgba(24, 77, 85, 0.25) transparent !important;
+}
+
+.custom-horizontal-scrollbar::-webkit-scrollbar, .overflow-x-auto::-webkit-scrollbar {
+  height: 5px !important;
+}
+
+.custom-horizontal-scrollbar::-webkit-scrollbar-track, .overflow-x-auto::-webkit-scrollbar-track {
+  background: rgba(24, 77, 85, 0.02) !important;
+  border-radius: 10px !important;
+}
+
+.custom-horizontal-scrollbar::-webkit-scrollbar-thumb, .overflow-x-auto::-webkit-scrollbar-thumb {
+  background-color: rgba(24, 77, 85, 0.25) !important;
+  border-radius: 10px !important;
+}
+
+.custom-horizontal-scrollbar::-webkit-scrollbar-thumb:hover, .overflow-x-auto::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(24, 77, 85, 0.45) !important;
+}
+
+/* --- 7. Viewport Bound Modals --- */
+.modal-dialog, 
+[id*="modal"] > div, 
+[class*="modal-content"] {
+  max-width: 92vw !important;
+  max-height: 90vh !important;
+  overflow-y: auto !important;
+  margin: auto !important;
+}
+
+/* Custom utility: Automatic image scaling */
+img {
+  max-width: 100% !important;
+  height: auto !important;
+}
+

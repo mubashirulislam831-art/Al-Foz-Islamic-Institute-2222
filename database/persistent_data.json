@@ -1,0 +1,140 @@
+{
+  "users": [
+    {
+      "id": 101,
+      "username": "admin",
+      "name": "Mubashir Ul Islam Awan",
+      "email": "alfozislamicinstitute@gmail.com",
+      "password": "$2y$10$TdG71zM8I.AsPq3vCW6mdezKoD8Va4DxY18YM/rkT4sR6r42ajYTK",
+      "role": "Super Admin",
+      "status": "Active"
+    }
+  ],
+  "admins": [
+    {
+      "id": 1,
+      "user_id": 101,
+      "employee_code": "ADM-101",
+      "branch_assigned": "Headquarters (Islamabad)",
+      "whatsapp": "+92 300 1112223"
+    }
+  ],
+  "teachers": [],
+  "parents": [],
+  "students": [],
+  "attendance": [],
+  "classes": [],
+  "rescheduled_classes": [],
+  "timers": [],
+  "exams": [],
+  "homework": [],
+  "fees": [],
+  "salary": [],
+  "formulas": [],
+  "progress_reports": [],
+  "notifications": [],
+  "activity_logs": [
+    {
+      "id": 1784911641474,
+      "user_id": 101,
+      "action": "User Login",
+      "details": "Super Admin logged in successfully via Chrome (Desktop).",
+      "timestamp": "2026-07-25 19:33:08"
+    },
+    {
+      "id": 1784911641473,
+      "user_id": 101,
+      "action": "Database Purged",
+      "details": "Removed all random data users from the database and frontend.",
+      "timestamp": "2026-07-24 16:47:21"
+    }
+  ],
+  "login_history": [
+    {
+      "id": 1785007988159,
+      "user_id": 101,
+      "email": "alfozislamicinstitute@gmail.com",
+      "role": "super_admin",
+      "name": "Super Admin",
+      "login_date": "2026-07-25",
+      "login_time": "19:33:08",
+      "logout_time": "",
+      "ip_address": "103.57.225.27, 169.254.169.126",
+      "browser": "Chrome",
+      "device": "Desktop",
+      "os": "Windows"
+    },
+    {
+      "id": 1784909486045,
+      "user_id": 101,
+      "email": "alfozislamicinstitute@gmail.com",
+      "role": "super_admin",
+      "name": "Super Admin",
+      "login_date": "2026-07-24",
+      "login_time": "16:11:26",
+      "logout_time": "",
+      "ip_address": "103.57.225.27, 169.254.169.126",
+      "browser": "Chrome",
+      "device": "Desktop",
+      "os": "Windows"
+    },
+    {
+      "id": 1784827057517,
+      "user_id": 101,
+      "email": "alfozislamicinstitute@gmail.com",
+      "role": "super_admin",
+      "name": "Super Admin",
+      "login_date": "2026-07-23",
+      "login_time": "17:17:37",
+      "logout_time": "",
+      "ip_address": "103.57.225.27, 169.254.169.126",
+      "browser": "Chrome",
+      "device": "Desktop",
+      "os": "Linux"
+    },
+    {
+      "id": 1784819575969,
+      "user_id": 101,
+      "email": "alfozislamicinstitute@gmail.com",
+      "role": "super_admin",
+      "name": "Super Admin",
+      "login_date": "2026-07-23",
+      "login_time": "15:12:55",
+      "logout_time": "",
+      "ip_address": "127.0.0.1",
+      "browser": "Chrome",
+      "device": "Desktop",
+      "os": "Linux"
+    }
+  ],
+  "active_sessions": {
+    "token_cmhhu6umxa9jpr8zsdrh5f_1784909486045": {
+      "user_id": 101,
+      "role": "super_admin",
+      "role_title": "",
+      "name": "Super Admin",
+      "email": "alfozislamicinstitute@gmail.com",
+      "login_time": "2026-07-24T16:11:26.045Z",
+      "session_token": "token_cmhhu6umxa9jpr8zsdrh5f_1784909486045",
+      "lastActivity": 1784909486045,
+      "device": "Desktop",
+      "browser": "Chrome",
+      "os": "Windows",
+      "ip": "103.57.225.27, 169.254.169.126"
+    },
+    "token_yuvaeg9l7cokrsrujfe50m_1785007988158": {
+      "user_id": 101,
+      "role": "super_admin",
+      "role_title": "",
+      "name": "Super Admin",
+      "email": "alfozislamicinstitute@gmail.com",
+      "login_time": "2026-07-25T19:33:08.159Z",
+      "session_token": "token_yuvaeg9l7cokrsrujfe50m_1785007988158",
+      "lastActivity": 1785007988159,
+      "device": "Desktop",
+      "browser": "Chrome",
+      "os": "Windows",
+      "ip": "103.57.225.27, 169.254.169.126"
+    }
+  }
+}

@@ -1,0 +1,6 @@
+/* Al Foz Islamic Institute - Class Session Page Styling */
+.session-timer {
+  font-family: monospace;
+  font-size: 1.5rem;
+  color: var(--primary-color);
+}

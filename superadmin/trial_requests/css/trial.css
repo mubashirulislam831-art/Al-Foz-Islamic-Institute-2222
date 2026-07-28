@@ -1,0 +1,4 @@
+/* Al Foz Islamic Institute - Trial class styles */
+.trial-card {
+  border-left: 4px solid var(--accent-color);
+}

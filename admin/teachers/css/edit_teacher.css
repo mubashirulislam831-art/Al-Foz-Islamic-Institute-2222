@@ -1,0 +1,4 @@
+/* Al Foz Islamic Institute - Edit Teacher Page Styling */
+.teacher-edit-header {
+  border-left: 4px solid var(--primary-color, #184D55);
+}

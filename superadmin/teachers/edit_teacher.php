@@ -1,0 +1,1099 @@
+<?php
+/**
+ * Al Foz Islamic Institute - Super Admin Edit Teacher
+ */
+require_once __DIR__ . '/../../includes/header.php';
+require_once __DIR__ . '/../../includes/permissions.php';
+require_once __DIR__ . '/../../includes/teachers_data.php';
+
+// Strictly require Super Admin role
+require_role('Super Admin');
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['form_type']) && $_POST['form_type'] === 'edit_teacher') {
+    $id = intval($_POST['id'] ?? 0);
+    if ($id > 0) {
+        update_teacher($id, $_POST);
+    }
+    if (!empty($_SERVER['HTTP_ACCEPT']) && strpos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false) {
+        header('Content-Type: application/json');
+        echo json_encode(['status' => 'success', 'redirect' => 'teacher_profile.php?id=' . $id . '&updated=success']);
+        exit;
+    }
+    if(ob_get_length()) ob_end_clean(); header("Location: teacher_profile.php?id=" . $id . "&updated=success");
+    exit;
+}
+
+// Fetch teacher data for edit mode
+$teacher_id = intval($_GET['id'] ?? 0);
+$teacher = get_teacher_by_id($teacher_id);
+if (!$teacher) {
+    $all_teach = get_all_teachers();
+    foreach ($all_teach as $t) {
+        if (intval($t['id']) === $teacher_id || $t['employee_id'] === ($_GET['id'] ?? '') || end(explode('-', $t['employee_id'] ?? '')) === ($_GET['id'] ?? '')) {
+            $teacher = $t;
+            break;
+        }
+    }
+}
+?>
+<script>
+window.TEACHER_DATA = <?php echo json_encode($teacher ?? new stdClass()); ?>;
+document.addEventListener("DOMContentLoaded", () => {
+    const data = window.TEACHER_DATA;
+    if (data && typeof data === 'object') {
+        const flatData = {};
+        const flatten = (obj, prefix = '') => {
+            for (let key in obj) {
+                if (obj[key] && typeof obj[key] === 'object' && !Array.isArray(obj[key])) {
+                    flatten(obj[key], prefix + key + '_');
+                } else {
+                    flatData[prefix + key] = obj[key];
+                }
+            }
+        };
+        flatten(data);
+        
+        // Also merge root keys directly to ensure precedence
+        for (let key in data) {
+            if (typeof data[key] !== 'object' || data[key] === null || Array.isArray(data[key])) {
+                flatData[key] = data[key];
+            }
+        }
+
+        const form = document.getElementById('teacherForm');
+        if (form) {
+            const elements = form.elements;
+            for (let i = 0; i < elements.length; i++) {
+                const element = elements[i];
+                const name = element.name;
+                if (!name) continue;
+
+                const cleanName = name.replace('[]', '');
+                let value = undefined;
+
+                if (flatData[name] !== undefined) {
+                    value = flatData[name];
+                } else if (flatData[cleanName] !== undefined) {
+                    value = flatData[cleanName];
+                } else {
+                    // Search for any key ending with _name
+                    for (let flatKey in flatData) {
+                        if (flatKey.endsWith('_' + name)) {
+                            value = flatData[flatKey];
+                            break;
+                        }
+                    }
+                }
+
+                if (value === undefined || value === null) continue;
+
+                if (element.type === 'checkbox') {
+                    if (name.endsWith('[]')) {
+                        const valStr = String(element.value);
+                        if (Array.isArray(value)) {
+                            element.checked = value.map(String).includes(valStr);
+                        } else if (typeof value === 'string') {
+                            element.checked = value.split(',').map(s => s.trim()).includes(valStr);
+                        }
+                    } else {
+                        element.checked = (value === true || value === 1 || value === '1' || value === 'Yes' || value === 'on' || value === 'Enabled');
+                    }
+                } else if (element.type === 'radio') {
+                    element.checked = (String(element.value) === String(value));
+                } else if (element.tagName === 'SELECT') {
+                    element.value = value;
+                    element.dispatchEvent(new Event('change'));
+                } else {
+                    element.value = value;
+                }
+            }
+        }
+    }
+});
+</script>
+
+<?php require_once __DIR__ . '/../../includes/sidebar.php'; ?>
+<!-- Main Portal Area -->
+<div class="flex-grow flex flex-col min-h-screen w-full bg-transparent page-transition">
+  <div class="p-6 md:p-8 flex-grow">
+    <!-- Navbar -->
+    <?php require_once __DIR__ . '/../../includes/navbar.php'; ?>
+    
+    <div class="mb-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+      <div>
+        <div class="flex items-center gap-2 text-xs font-bold text-primary/60 uppercase tracking-widest mb-2">
+            <i data-lucide="users" class="w-4 h-4"></i>
+            <span>HR Management</span>
+            <i data-lucide="chevron-right" class="w-3 h-3"></i>
+            <span class="text-primary">Edit Teacher</span>
+        </div>
+        <h1 class="text-2xl sm:text-3xl font-black text-primary tracking-tight">Professional Teacher Registry Wizard</h1>
+        <p class="text-[10px] text-primary/70 uppercase tracking-wider font-bold mt-1">Configure credentials, specialization, slots and access securely.</p>
+      </div>
+      <div class="flex gap-3">
+        <a href="teachers.php" class="px-4 py-2.5 bg-white border border-primary/10 text-primary rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-primary/5 transition-all shadow-sm flex items-center gap-2">
+            <i data-lucide="arrow-left" class="w-4 h-4"></i> Back to Directory
+        </a>
+      </div>
+    </div>
+
+    <!-- Sticky Progress Bar -->
+    <div class="relative z-10 bg-[#F7FAFF]/95 backdrop-blur-md pt-2 pb-4 mb-6" id="wizard-progress-container">
+        <div class="flex overflow-x-auto pb-2 hide-scrollbar items-center gap-2" id="wizard-steps-indicator">
+            <!-- Generated by JS -->
+        </div>
+    </div>
+
+    <!-- MAIN WIZARD FORM -->
+    <form action="edit_teacher.php" method="POST" enctype="multipart/form-data" class="relative" id="teacherForm">
+      <input type="hidden" name="id" value="<?php echo $_GET['id'] ?? ''; ?>">
+<input type="hidden" name="form_type" value="edit_teacher">
+      
+      <!-- STEP 1: TEACHER IDENTITY -->
+      <div class="wizard-step" id="step-1">
+        <div class="bg-white rounded-3xl p-6 md:p-8 border border-primary/10 shadow-sm mb-6 relative overflow-hidden">
+            <div class="absolute -right-10 -top-10 w-40 h-40 bg-emerald-50 rounded-full blur-3xl pointer-events-none"></div>
+            
+            <div class="flex items-center justify-between mb-8 relative z-10 border-b border-primary/5 pb-4">
+              <div>
+                  <h2 class="text-lg font-black text-primary flex items-center gap-2">
+                      <i data-lucide="fingerprint" class="w-5 h-5 text-emerald-500"></i> Teacher Identity
+                  </h2>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 relative z-10">
+                <div class="lg:row-span-2 flex flex-col">
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-2">Profile Picture</label>
+                    <div class="flex-1 border-2 border-dashed border-primary/20 rounded-3xl p-6 text-center bg-slate-50/50 hover:bg-slate-50 transition-colors cursor-pointer relative flex flex-col items-center justify-center group">
+                        <input type="file" name="teacher_picture" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" accept="image/*" onchange="previewImage(this, 'teacher-preview')">
+                        <img id="teacher-preview" src="" class="w-24 h-24 rounded-full object-cover mb-3 hidden shadow-md">
+                        <i data-lucide="camera" class="w-8 h-8 text-primary/40 mx-auto mb-3 group-hover:scale-110 transition-transform" id="teacher-icon"></i>
+                        <p class="text-xs font-semibold text-primary/70 mb-1">Upload Photo</p>
+                        <p class="text-[9px] text-primary/40">JPG, PNG (Max 2MB)</p>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Employee ID (Auto)</label>
+                    <input type="text" name="employee_id" value="" readonly class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-bold text-primary/60 bg-slate-100 outline-none transition-all">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Full Name <span class="text-rose-500">*</span></label>
+                    <input type="text" name="name" placeholder="e.g. Fatima Al-Zahra" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Father / Husband Name <span class="text-rose-500">*</span></label>
+                    <input type="text" name="father_name" placeholder="e.g. Abdullah Khan" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Mother Name</label>
+                    <input type="text" name="mother_name" placeholder="e.g. Ayesha" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Gender <span class="text-rose-500">*</span></label>
+                    <select name="gender" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Date of Birth <span class="text-rose-500">*</span></label>
+                    <input type="date" name="dob" id="dob_input" onchange="calculateAge()" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Age (Auto Calc)</label>
+                    <input type="text" id="age_output" readonly placeholder="Years" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary/60 bg-slate-100 outline-none transition-all">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">National ID (CNIC)</label>
+                    <input type="text" name="cnic" placeholder="e.g. 35201-1234567-8" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Passport Number</label>
+                    <input type="text" name="passport_number" placeholder="Passport No" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Nationality</label>
+                    <input type="text" name="nationality" placeholder="e.g. Pakistani" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Religion</label>
+                    <input type="text" name="religion" value="Islam" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Blood Group</label>
+                    <select name="blood_group" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                        <option value="">Unknown</option>
+                        <option value="A+">A+</option>
+                        <option value="A-">A-</option>
+                        <option value="B+">B+</option>
+                        <option value="B-">B-</option>
+                        <option value="O+">O+</option>
+                        <option value="O-">O-</option>
+                        <option value="AB+">AB+</option>
+                        <option value="AB-">AB-</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Marital Status</label>
+                    <select name="marital_status" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                        <option value="Single">Single</option>
+                        <option value="Married">Married</option>
+                        <option value="Divorced">Divorced</option>
+                        <option value="Widowed">Widowed</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+      </div>
+
+      <!-- STEP 2: COUNTRY & CONTACT -->
+      <div class="wizard-step hidden" id="step-2">
+        <div class="bg-white rounded-3xl p-6 md:p-8 border border-primary/10 shadow-sm mb-6 relative overflow-hidden">
+            <div class="absolute -right-10 -top-10 w-40 h-40 bg-blue-50 rounded-full blur-3xl pointer-events-none"></div>
+            
+            <div class="flex items-center justify-between mb-8 relative z-10 border-b border-primary/5 pb-4">
+              <div>
+                  <h2 class="text-lg font-black text-primary flex items-center gap-2">
+                      <i data-lucide="map-pin" class="w-5 h-5 text-blue-500"></i> Country & Contact
+                  </h2>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 relative z-10">
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Country (Type Manually) <span class="text-rose-500">*</span></label>
+                    <input type="text" name="country" onblur="autoDetectLocation(this.value)" placeholder="e.g. Pakistan" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Currency (Auto Detect)</label>
+                    <input type="text" name="currency" id="loc_currency" placeholder="e.g. PKR" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Country Code</label>
+                    <input type="text" name="country_code" id="loc_code" placeholder="e.g. +92" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Time Zone</label>
+                    <input type="text" name="timezone" id="loc_tz" placeholder="e.g. PKT" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">City <span class="text-rose-500">*</span></label>
+                    <input type="text" name="city" placeholder="e.g. Lahore" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Postal Code</label>
+                    <input type="text" name="postal_code" placeholder="e.g. 54000" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                </div>
+                <div class="lg:col-span-3">
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Full Address <span class="text-rose-500">*</span></label>
+                    <input type="text" name="address" placeholder="e.g. House 45-B, Sector Z, DHA" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Mobile Number <span class="text-rose-500">*</span></label>
+                    <input type="tel" name="phone" placeholder="e.g. 300 1234567" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">WhatsApp Number <span class="text-rose-500">*</span></label>
+                    <input type="tel" name="whatsapp" placeholder="e.g. 300 1234567" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Email Address <span class="text-rose-500">*</span></label>
+                    <input type="email" name="email" placeholder="e.g. teacher@example.com" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Emergency Contact Name</label>
+                    <input type="text" name="emergency_contact" placeholder="e.g. Brother" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Emergency Contact Number</label>
+                    <input type="text" name="emergency_contact_number" placeholder="e.g. +92 311 9876543" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Emergency Relation</label>
+                    <input type="text" name="emergency_relation" placeholder="e.g. Brother, Father" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                </div>
+            </div>
+        </div>
+      </div>
+
+      <!-- STEP 3: EDUCATION & EXPERIENCE -->
+      <div class="wizard-step hidden" id="step-3">
+        <div class="bg-white rounded-3xl p-6 md:p-8 border border-primary/10 shadow-sm mb-6 relative overflow-hidden">
+            <div class="absolute -right-10 -top-10 w-40 h-40 bg-purple-50 rounded-full blur-3xl pointer-events-none"></div>
+            
+            <div class="flex items-center justify-between mb-8 relative z-10 border-b border-primary/5 pb-4">
+              <div>
+                  <h2 class="text-lg font-black text-primary flex items-center gap-2">
+                      <i data-lucide="award" class="w-5 h-5 text-purple-500"></i> Education & Experience
+                  </h2>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10">
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Highest Qualification <span class="text-rose-500">*</span></label>
+                    <select name="qualification" id="qual_select" onchange="toggleQual()" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                        <option value="">Select Qualification</option>
+                        <option value="Hafiz Quran">Hafiz Quran</option>
+                        <option value="Qari">Qari</option>
+                        <option value="Mufti">Mufti</option>
+                        <option value="Alim">Alim</option>
+                        <option value="MA Islamic Studies">MA Islamic Studies</option>
+                        <option value="BA">BA</option>
+                        <option value="MSc">MSc</option>
+                        <option value="BS">BS</option>
+                        <option value="Other">Other</option>
+                    </select>
+                    <input type="text" name="qualification_other" id="qual_other" placeholder="Specify Other Qualification" class="w-full px-4 py-3 mt-2 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all hidden">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Teaching Experience <span class="text-rose-500">*</span></label>
+                    <select name="experience" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                        <option value="Fresher">Fresher</option>
+                        <option value="1 Year">1 Year</option>
+                        <option value="2 Years">2 Years</option>
+                        <option value="3 Years">3 Years</option>
+                        <option value="5 Years">5 Years</option>
+                        <option value="10+ Years">10+ Years</option>
+                    </select>
+                </div>
+                
+                <div class="md:col-span-2">
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-2">Specialization</label>
+                    <div class="flex flex-wrap gap-3">
+                        <label class="flex items-center gap-2 text-xs font-semibold text-primary bg-slate-50 px-3 py-2 rounded-xl border border-primary/5"><input type="checkbox" name="specialization[]" value="Qaida"> Qaida</label>
+                        <label class="flex items-center gap-2 text-xs font-semibold text-primary bg-slate-50 px-3 py-2 rounded-xl border border-primary/5"><input type="checkbox" name="specialization[]" value="Noorani Qaida"> Noorani Qaida</label>
+                        <label class="flex items-center gap-2 text-xs font-semibold text-primary bg-slate-50 px-3 py-2 rounded-xl border border-primary/5"><input type="checkbox" name="specialization[]" value="Nazra"> Nazra</label>
+                        <label class="flex items-center gap-2 text-xs font-semibold text-primary bg-slate-50 px-3 py-2 rounded-xl border border-primary/5"><input type="checkbox" name="specialization[]" value="Hifz"> Hifz</label>
+                        <label class="flex items-center gap-2 text-xs font-semibold text-primary bg-slate-50 px-3 py-2 rounded-xl border border-primary/5"><input type="checkbox" name="specialization[]" value="Tajweed"> Tajweed</label>
+                        <label class="flex items-center gap-2 text-xs font-semibold text-primary bg-slate-50 px-3 py-2 rounded-xl border border-primary/5"><input type="checkbox" name="specialization[]" value="Translation"> Translation</label>
+                        <label class="flex items-center gap-2 text-xs font-semibold text-primary bg-slate-50 px-3 py-2 rounded-xl border border-primary/5"><input type="checkbox" name="specialization[]" value="Tafseer"> Tafseer</label>
+                        <label class="flex items-center gap-2 text-xs font-semibold text-primary bg-slate-50 px-3 py-2 rounded-xl border border-primary/5"><input type="checkbox" name="specialization[]" value="Arabic"> Arabic</label>
+                        <label class="flex items-center gap-2 text-xs font-semibold text-primary bg-slate-50 px-3 py-2 rounded-xl border border-primary/5"><input type="checkbox" name="specialization[]" value="Islamic Studies"> Islamic Studies</label>
+                        <label class="flex items-center gap-2 text-xs font-semibold text-primary bg-slate-50 px-3 py-2 rounded-xl border border-primary/5"><input type="checkbox" name="specialization[]" value="Hadith"> Hadith</label>
+                        <label class="flex items-center gap-2 text-xs font-semibold text-primary bg-slate-50 px-3 py-2 rounded-xl border border-primary/5"><input type="checkbox" name="specialization[]" value="School Tuition"> School Tuition</label>
+                        <label class="flex items-center gap-2 text-xs font-semibold text-primary bg-slate-50 px-3 py-2 rounded-xl border border-primary/5"><input type="checkbox" name="specialization[]" value="Spoken Arabic"> Spoken Arabic</label>
+                        <label class="flex items-center gap-2 text-xs font-semibold text-primary bg-slate-50 px-3 py-2 rounded-xl border border-primary/5"><input type="checkbox" name="specialization[]" value="Other"> Other</label>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-2">Languages</label>
+                    <div class="flex flex-wrap gap-3">
+                        <label class="flex items-center gap-2 text-xs font-semibold text-primary bg-slate-50 px-3 py-2 rounded-xl border border-primary/5"><input type="checkbox" name="languages[]" value="Urdu"> Urdu</label>
+                        <label class="flex items-center gap-2 text-xs font-semibold text-primary bg-slate-50 px-3 py-2 rounded-xl border border-primary/5"><input type="checkbox" name="languages[]" value="English"> English</label>
+                        <label class="flex items-center gap-2 text-xs font-semibold text-primary bg-slate-50 px-3 py-2 rounded-xl border border-primary/5"><input type="checkbox" name="languages[]" value="Arabic"> Arabic</label>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-2">Teaching Level</label>
+                    <div class="flex flex-wrap gap-3">
+                        <label class="flex items-center gap-2 text-xs font-semibold text-primary bg-slate-50 px-3 py-2 rounded-xl border border-primary/5"><input type="checkbox" name="teaching_level[]" value="Kids"> Kids</label>
+                        <label class="flex items-center gap-2 text-xs font-semibold text-primary bg-slate-50 px-3 py-2 rounded-xl border border-primary/5"><input type="checkbox" name="teaching_level[]" value="Teenagers"> Teenagers</label>
+                        <label class="flex items-center gap-2 text-xs font-semibold text-primary bg-slate-50 px-3 py-2 rounded-xl border border-primary/5"><input type="checkbox" name="teaching_level[]" value="Adults"> Adults</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+      </div>
+
+      <!-- STEP 4: EMPLOYMENT INFORMATION -->
+      <div class="wizard-step hidden" id="step-4">
+        <div class="bg-white rounded-3xl p-6 md:p-8 border border-primary/10 shadow-sm mb-6 relative overflow-hidden">
+            <div class="absolute -right-10 -top-10 w-40 h-40 bg-teal-50 rounded-full blur-3xl pointer-events-none"></div>
+            
+            <div class="flex items-center justify-between mb-8 relative z-10 border-b border-primary/5 pb-4">
+              <div>
+                  <h2 class="text-lg font-black text-primary flex items-center gap-2">
+                      <i data-lucide="briefcase" class="w-5 h-5 text-teal-500"></i> Employment Information
+                  </h2>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 relative z-10">
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Joining Type <span class="text-rose-500">*</span></label>
+                    <select name="joining_type" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                        <option value="Under Training">Under Training</option>
+                        <option value="Probation">Probation</option>
+                        <option value="Permanent" selected>Permanent</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Employment Type <span class="text-rose-500">*</span></label>
+                    <select name="employment_type" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                        <option value="Full Time" selected>Full Time</option>
+                        <option value="Part Time">Part Time</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Teacher Status</label>
+                    <select name="status" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-bold text-primary outline-none focus:border-primary/50 bg-emerald-50/50 border-emerald-200 text-emerald-800 transition-all">
+                        <option value="Active" selected>Active</option>
+                        <option value="On Leave">On Leave</option>
+                        <option value="Inactive">Inactive</option>
+                        <option value="Resigned">Resigned</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Department</label>
+                    <input type="text" name="department" placeholder="e.g. Quran Dept" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Designation</label>
+                    <select name="designation" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                        <option value="Teacher">Teacher</option>
+                        <option value="Senior Teacher">Senior Teacher</option>
+                        <option value="Head Teacher">Head Teacher</option>
+                        <option value="Coordinator">Coordinator</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Registration / Joining Date</label>
+                    <input type="date" name="joining_date" value="" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                </div>
+            </div>
+        </div>
+      </div>
+
+      <!-- STEP 5: SALARY INFORMATION -->
+      <div class="wizard-step hidden" id="step-5">
+        <div class="bg-white rounded-3xl p-6 md:p-8 border border-primary/10 shadow-sm mb-6 relative overflow-hidden">
+            <div class="absolute -right-10 -top-10 w-40 h-40 bg-orange-50 rounded-full blur-3xl pointer-events-none"></div>
+            
+            <div class="flex items-center justify-between mb-8 relative z-10 border-b border-primary/5 pb-4">
+              <div>
+                  <h2 class="text-lg font-black text-primary flex items-center gap-2">
+                      <i data-lucide="banknote" class="w-5 h-5 text-orange-500"></i> Salary Information
+                  </h2>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 relative z-10">
+                <div class="lg:col-span-3">
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Salary Type <span class="text-rose-500">*</span></label>
+                    <select name="salary_type" id="salary_type_select" onchange="toggleSalaryRates()" class="w-full md:w-1/3 px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                        <option value="Per Student">Per Student</option>
+                        <option value="Fixed Monthly">Fixed Monthly</option>
+                    </select>
+                </div>
+
+                <!-- Fixed Monthly Input -->
+                <div id="fixed_salary_container" class="hidden lg:col-span-3">
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Fixed Monthly Salary</label>
+                    <input type="number" step="0.01" name="salary" placeholder="e.g. 50000" class="w-full md:w-1/3 px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                </div>
+
+                <!-- Per Student Rates -->
+                <div id="per_student_container" class="lg:col-span-3 bg-slate-50/50 p-6 rounded-2xl border border-primary/10 space-y-4">
+                    <h3 class="text-xs font-bold text-primary/80 uppercase tracking-wider mb-4 border-b border-primary/5 pb-2">Per Student Salary Rates</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                        <div>
+                            <label class="block text-[9px] font-bold text-primary/70 uppercase mb-1">30 Mins (3 Days)</label>
+                            <input type="number" name="rate_30_3" value="<?php echo htmlspecialchars($teacher['rate_30_3'] ?? ''); ?>"  placeholder="PKR" class="w-full px-3 py-2 border border-primary/10 rounded-xl text-xs font-semibold text-primary bg-white">
+                        </div>
+                        <div>
+                            <label class="block text-[9px] font-bold text-primary/70 uppercase mb-1">30 Mins (5 Days)</label>
+                            <input type="number" name="rate_30_5" value="<?php echo htmlspecialchars($teacher['rate_30_5'] ?? ''); ?>"  oninput="autoFillSalaryRates(this.value)" placeholder="PKR" class="w-full px-3 py-2 border border-primary/10 rounded-xl text-xs font-semibold text-primary bg-white">
+                        </div>
+                        <div>
+                            <label class="block text-[9px] font-bold text-primary/70 uppercase mb-1">45 Mins (3 Days)</label>
+                            <input type="number" name="rate_45_3" value="<?php echo htmlspecialchars($teacher['rate_45_3'] ?? ''); ?>"  placeholder="PKR" class="w-full px-3 py-2 border border-primary/10 rounded-xl text-xs font-semibold text-primary bg-white">
+                        </div>
+                        <div>
+                            <label class="block text-[9px] font-bold text-primary/70 uppercase mb-1">45 Mins (5 Days)</label>
+                            <input type="number" name="rate_45_5" value="<?php echo htmlspecialchars($teacher['rate_45_5'] ?? ''); ?>"  placeholder="PKR" class="w-full px-3 py-2 border border-primary/10 rounded-xl text-xs font-semibold text-primary bg-white">
+                        </div>
+                        <div>
+                            <label class="block text-[9px] font-bold text-primary/70 uppercase mb-1">60 Mins (3 Days)</label>
+                            <input type="number" name="rate_60_3" value="<?php echo htmlspecialchars($teacher['rate_60_3'] ?? ''); ?>"  placeholder="PKR" class="w-full px-3 py-2 border border-primary/10 rounded-xl text-xs font-semibold text-primary bg-white">
+                        </div>
+                        <div>
+                            <label class="block text-[9px] font-bold text-primary/70 uppercase mb-1">60 Mins (5 Days)</label>
+                            <input type="number" name="rate_60_5" value="<?php echo htmlspecialchars($teacher['rate_60_5'] ?? ''); ?>"  placeholder="PKR" class="w-full px-3 py-2 border border-primary/10 rounded-xl text-xs font-semibold text-primary bg-white">
+                        </div>
+                        <div>
+                            <label class="block text-[9px] font-bold text-primary/70 uppercase mb-1">90 Mins (3 Days)</label>
+                            <input type="number" name="rate_90_3" value="<?php echo htmlspecialchars($teacher['rate_90_3'] ?? ''); ?>"  placeholder="PKR" class="w-full px-3 py-2 border border-primary/10 rounded-xl text-xs font-semibold text-primary bg-white">
+                        </div>
+                        <div>
+                            <label class="block text-[9px] font-bold text-primary/70 uppercase mb-1">90 Mins (5 Days)</label>
+                            <input type="number" name="rate_90_5" value="<?php echo htmlspecialchars($teacher['rate_90_5'] ?? ''); ?>"  placeholder="PKR" class="w-full px-3 py-2 border border-primary/10 rounded-xl text-xs font-semibold text-primary bg-white">
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Bonus (Default)</label>
+                    <input type="number" step="0.01" name="allowances" placeholder="e.g. 2000" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Deductions (Default)</label>
+                    <input type="number" step="0.01" name="deductions" placeholder="e.g. 500" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Payment Method</label>
+                    <select name="payment_method" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                        <option value="Bank Transfer">Bank Transfer</option>
+                        <option value="Wise">Wise</option>
+                        <option value="PayPal">PayPal</option>
+                        <option value="Stripe">Stripe</option>
+                        <option value="JazzCash">JazzCash</option>
+                        <option value="EasyPaisa">EasyPaisa</option>
+                        <option value="Cash">Cash</option>
+                    </select>
+                </div>
+                
+                <div class="lg:col-span-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 pt-4 border-t border-primary/10">
+                    <div>
+                        <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Bank Name</label>
+                        <input type="text" name="bank_name" placeholder="e.g. Meezan Bank" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Bank Account / IBAN</label>
+                        <input type="text" name="account_number" placeholder="e.g. PK12MEZN..." class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Wise Email / PayPal</label>
+                        <input type="text" name="wise_email" placeholder="e.g. acc@wise.com" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">JazzCash / EasyPaisa No</label>
+                        <input type="text" name="mobile_wallet" placeholder="e.g. 03001234567" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                    </div>
+                </div>
+            </div>
+        </div>
+      </div>
+
+      <!-- STEP 6: FREE SLOTS -->
+      <div class="wizard-step hidden" id="step-6">
+        <div class="bg-white rounded-3xl p-6 md:p-8 border border-primary/10 shadow-sm mb-6 relative overflow-hidden">
+            <div class="absolute -right-10 -top-10 w-40 h-40 bg-pink-50 rounded-full blur-3xl pointer-events-none"></div>
+            
+            <div class="flex items-center justify-between mb-8 relative z-10 border-b border-primary/5 pb-4">
+              <div>
+                  <h2 class="text-lg font-black text-primary flex items-center gap-2">
+                      <i data-lucide="clock" class="w-5 h-5 text-pink-500"></i> Free Slots Availability
+                  </h2>
+                  <p class="text-[10px] font-bold text-primary/50 uppercase tracking-widest mt-1">Weekly availability</p>
+              </div>
+            </div>
+
+            
+            
+            <div class="relative z-10 space-y-6">
+                <p class="text-xs text-primary/70 font-medium">Add time slots (e.g. 09:00 AM) for each day.</p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="bg-slate-50 border border-primary/10 rounded-2xl p-4">
+                        <h4 class="text-xs font-bold uppercase tracking-wider text-primary mb-3">Monday</h4>
+                        <input type="text" name="slots_monday" value="<?php echo htmlspecialchars($teacher['slots_monday'] ?? ''); ?>" placeholder="e.g. 09:00 AM, 04:00 PM" class="w-full px-3 py-2 border border-primary/20 rounded-xl text-xs font-semibold text-primary outline-none">
+                    </div>
+                    <div class="bg-slate-50 border border-primary/10 rounded-2xl p-4">
+                        <h4 class="text-xs font-bold uppercase tracking-wider text-primary mb-3">Tuesday</h4>
+                        <input type="text" name="slots_tuesday" value="<?php echo htmlspecialchars($teacher['slots_tuesday'] ?? ''); ?>" placeholder="e.g. 09:00 AM, 04:00 PM" class="w-full px-3 py-2 border border-primary/20 rounded-xl text-xs font-semibold text-primary outline-none">
+                    </div>
+                    <div class="bg-slate-50 border border-primary/10 rounded-2xl p-4">
+                        <h4 class="text-xs font-bold uppercase tracking-wider text-primary mb-3">Wednesday</h4>
+                        <input type="text" name="slots_wednesday" value="<?php echo htmlspecialchars($teacher['slots_wednesday'] ?? ''); ?>" placeholder="e.g. 09:00 AM, 04:00 PM" class="w-full px-3 py-2 border border-primary/20 rounded-xl text-xs font-semibold text-primary outline-none">
+                    </div>
+                    <div class="bg-slate-50 border border-primary/10 rounded-2xl p-4">
+                        <h4 class="text-xs font-bold uppercase tracking-wider text-primary mb-3">Thursday</h4>
+                        <input type="text" name="slots_thursday" value="<?php echo htmlspecialchars($teacher['slots_thursday'] ?? ''); ?>" placeholder="e.g. 09:00 AM, 04:00 PM" class="w-full px-3 py-2 border border-primary/20 rounded-xl text-xs font-semibold text-primary outline-none">
+                    </div>
+                    <div class="bg-slate-50 border border-primary/10 rounded-2xl p-4">
+                        <h4 class="text-xs font-bold uppercase tracking-wider text-primary mb-3">Friday</h4>
+                        <input type="text" name="slots_friday" value="<?php echo htmlspecialchars($teacher['slots_friday'] ?? ''); ?>" placeholder="e.g. 09:00 AM, 04:00 PM" class="w-full px-3 py-2 border border-primary/20 rounded-xl text-xs font-semibold text-primary outline-none">
+                    </div>
+                    <div class="bg-slate-50 border border-primary/10 rounded-2xl p-4">
+                        <h4 class="text-xs font-bold uppercase tracking-wider text-primary mb-3">Saturday</h4>
+                        <input type="text" name="slots_saturday" value="<?php echo htmlspecialchars($teacher['slots_saturday'] ?? ''); ?>" placeholder="e.g. 09:00 AM, 04:00 PM" class="w-full px-3 py-2 border border-primary/20 rounded-xl text-xs font-semibold text-primary outline-none">
+                    </div>
+                    <div class="bg-slate-50 border border-primary/10 rounded-2xl p-4">
+                        <h4 class="text-xs font-bold uppercase tracking-wider text-primary mb-3">Sunday</h4>
+                        <input type="text" name="slots_sunday" value="<?php echo htmlspecialchars($teacher['slots_sunday'] ?? ''); ?>" placeholder="e.g. 09:00 AM, 04:00 PM" class="w-full px-3 py-2 border border-primary/20 rounded-xl text-xs font-semibold text-primary outline-none">
+                    </div>
+                </div>
+            </div>
+
+        </div>
+      </div>
+
+      <!-- STEP 7: DOCUMENTS -->
+      <div class="wizard-step hidden" id="step-7">
+        <div class="bg-white rounded-3xl p-6 md:p-8 border border-primary/10 shadow-sm mb-6 relative overflow-hidden">
+            <div class="absolute -right-10 -top-10 w-40 h-40 bg-indigo-50 rounded-full blur-3xl pointer-events-none"></div>
+            
+            <div class="flex items-center justify-between mb-8 relative z-10 border-b border-primary/5 pb-4">
+              <div>
+                  <h2 class="text-lg font-black text-primary flex items-center gap-2">
+                      <i data-lucide="file-text" class="w-5 h-5 text-indigo-500"></i> Documents
+                  </h2>
+              </div>
+            </div>
+
+            <div class="relative z-10">
+                <p class="text-xs font-medium text-primary/70 mb-4">Upload all necessary verification documents (CNIC, Passport, Degree, Ijazah, Experience Letters).</p>
+                <div class="border-2 border-dashed border-primary/20 rounded-3xl p-10 text-center bg-slate-50/50 hover:bg-slate-50 transition-colors cursor-pointer relative overflow-hidden group">
+                    <input type="file" name="documents[]" multiple class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
+                    <i data-lucide="upload-cloud" class="w-10 h-10 text-primary/40 mx-auto mb-3 group-hover:scale-110 transition-transform"></i>
+                    <p class="text-sm font-black text-primary/80 mb-1">Drag and drop files here, or click to browse</p>
+                    <p class="text-[10px] font-bold text-primary/50 uppercase tracking-wider">Supports PDF, JPG, PNG (Max 5MB each)</p>
+                    <button type="button" class="mt-6 px-6 py-2.5 bg-white border border-primary/20 text-primary rounded-xl text-xs font-bold uppercase tracking-wider shadow-sm pointer-events-none">Browse Files</button>
+                </div>
+            </div>
+        </div>
+      </div>
+
+      <!-- STEP 8: LOGIN PORTAL -->
+      <div class="wizard-step hidden" id="step-8">
+        <div class="bg-white rounded-3xl p-6 md:p-8 border border-primary/10 shadow-sm mb-6 relative overflow-hidden">
+            <div class="absolute -right-10 -top-10 w-40 h-40 bg-cyan-50 rounded-full blur-3xl pointer-events-none"></div>
+            
+            <div class="flex items-center justify-between mb-8 relative z-10 border-b border-primary/5 pb-4">
+              <div>
+                  <h2 class="text-lg font-black text-primary flex items-center gap-2">
+                      <i data-lucide="monitor" class="w-5 h-5 text-cyan-500"></i> Login Portal
+                  </h2>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10">
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Portal Username / Email</label>
+                    <input type="email" name="portal_email" placeholder="teacher@alfoz.com" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Portal Password</label>
+                    <div class="relative">
+                        <input type="text" name="portal_password" id="gen_pass" placeholder="Enter secure password" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                        <button type="button" onclick="document.getElementById('gen_pass').value = Math.random().toString(36).slice(-8);" class="absolute right-2 top-1/2 -translate-y-1/2 bg-primary/10 hover:bg-primary/20 text-primary px-3 py-1.5 rounded-xl text-[9px] font-bold uppercase tracking-wider transition-colors shadow-sm">Generate</button>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Portal Status</label>
+                    <select name="portal_status" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-bold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all">
+                        <option value="Active">Active</option>
+                        <option value="Disabled">Disabled</option>
+                    </select>
+                </div>
+                <div class="bg-slate-50 p-4 rounded-2xl border border-primary/5">
+                    <h4 class="text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1">System Info (Auto)</h4>
+                    <p class="text-xs text-primary/60 font-mono">Last Login: Never</p>
+                    <p class="text-xs text-primary/60 font-mono">Device: None</p>
+                    <p class="text-xs text-primary/60 font-mono">IP: None</p>
+                </div>
+            </div>
+        </div>
+      </div>
+
+      <!-- STEP 9: TEACHER PERMISSIONS -->
+      <div class="wizard-step hidden" id="step-9">
+        <div class="bg-white rounded-3xl p-6 md:p-8 border border-primary/10 shadow-sm mb-6 relative overflow-hidden">
+            <div class="absolute -right-10 -top-10 w-40 h-40 bg-yellow-50 rounded-full blur-3xl pointer-events-none"></div>
+            
+            <div class="flex items-center justify-between mb-8 relative z-10 border-b border-primary/5 pb-4">
+              <div>
+                  <h2 class="text-lg font-black text-primary flex items-center gap-2">
+                      <i data-lucide="shield" class="w-5 h-5 text-yellow-500"></i> Teacher Permissions
+                  </h2>
+                  <p class="text-[10px] font-bold text-primary/50 uppercase tracking-widest mt-1">Read-Only View</p>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8 relative z-10">
+                <div>
+                    <h3 class="text-xs font-bold text-emerald-600 uppercase tracking-widest mb-4 flex items-center gap-2"><i data-lucide="check-circle" class="w-4 h-4"></i> Teacher Can</h3>
+                    <ul class="space-y-3 text-xs font-semibold text-primary/80">
+                        <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald-500"></i> View Assigned Students</li>
+                        <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald-500"></i> Mark Attendance</li>
+                        <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald-500"></i> View Schedule</li>
+                        <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald-500"></i> Add Lessons & Remarks</li>
+                        <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald-500"></i> View Reports</li>
+                        <li class="flex items-center gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald-500"></i> View Own Salary</li>
+                    </ul>
+                </div>
+                <div>
+                    <h3 class="text-xs font-bold text-rose-600 uppercase tracking-widest mb-4 flex items-center gap-2"><i data-lucide="x-circle" class="w-4 h-4"></i> Teacher Cannot</h3>
+                    <ul class="space-y-3 text-xs font-semibold text-primary/80">
+                        <li class="flex items-center gap-2"><i data-lucide="x" class="w-4 h-4 text-rose-500"></i> Delete Students</li>
+                        <li class="flex items-center gap-2"><i data-lucide="x" class="w-4 h-4 text-rose-500"></i> Edit Fees</li>
+                        <li class="flex items-center gap-2"><i data-lucide="x" class="w-4 h-4 text-rose-500"></i> Edit Student Profiles</li>
+                        <li class="flex items-center gap-2"><i data-lucide="x" class="w-4 h-4 text-rose-500"></i> Create New Users</li>
+                        <li class="flex items-center gap-2"><i data-lucide="x" class="w-4 h-4 text-rose-500"></i> Access Admin Portal</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+      </div>
+
+      <!-- STEP 10: ADMIN NOTES & COMPLETE -->
+      <div class="wizard-step hidden" id="step-10">
+        <div class="bg-white rounded-3xl p-6 md:p-8 border border-primary/10 shadow-sm mb-6 relative overflow-hidden">
+            <div class="absolute -right-10 -top-10 w-40 h-40 bg-gray-100 rounded-full blur-3xl pointer-events-none"></div>
+            
+            <div class="flex items-center justify-between mb-8 relative z-10 border-b border-primary/5 pb-4">
+              <div>
+                  <h2 class="text-lg font-black text-primary flex items-center gap-2">
+                      <i data-lucide="clipboard-list" class="w-5 h-5 text-gray-500"></i> Admin Notes
+                  </h2>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10">
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Internal Notes</label>
+                    <textarea name="internal_notes" rows="3" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all"></textarea>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Performance Notes</label>
+                    <textarea name="performance_notes" rows="3" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all"></textarea>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Warnings</label>
+                    <textarea name="warnings" rows="2" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all"></textarea>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Achievements</label>
+                    <textarea name="achievements" rows="2" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all"></textarea>
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-[10px] font-bold text-primary/70 uppercase tracking-wider mb-1.5">Private Notes (Super Admin Only)</label>
+                    <textarea name="private_notes" rows="2" class="w-full px-4 py-3 border border-primary/10 rounded-2xl text-xs font-semibold text-primary outline-none focus:border-primary/50 bg-slate-50/50 transition-all"></textarea>
+                </div>
+            </div>
+            
+            <div class="mt-8 p-6 bg-emerald-50/50 border border-emerald-100 rounded-3xl flex items-start gap-4 z-10 relative">
+                <i data-lucide="check-circle" class="w-8 h-8 text-emerald-500 shrink-0"></i>
+                <div>
+                    <h4 class="text-sm font-black text-emerald-900 mb-1">Ready for Submission</h4>
+                    <p class="text-xs text-emerald-700/80 leading-relaxed font-medium">Please review all data provided across the tabs. This teacher will be granted access immediately upon saving.</p>
+                </div>
+            </div>
+        </div>
+      </div>
+
+      <!-- Wizard Controls -->
+      <div class="flex flex-col md:flex-row items-center justify-between bg-white p-5 rounded-3xl border border-primary/10 shadow-sm mt-8 gap-4" id="wizard-controls">
+          <div class="flex gap-2 w-full md:w-auto">
+              <button type="button" id="btn-prev" class="hidden px-5 py-3 bg-white border border-primary/20 text-primary rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-primary/5 transition-all shadow-sm w-full md:w-auto text-center">Previous Step</button>
+          </div>
+          <div class="flex gap-2 w-full md:w-auto flex-wrap justify-center md:justify-end" id="action-buttons">
+              <button type="button" class="hidden lg:block px-5 py-3 bg-white border border-primary/20 text-primary/70 rounded-xl text-[10px] font-bold uppercase tracking-wider hover:bg-primary/5 transition-all shadow-sm" onclick="saveDraft()">Save Draft</button>
+              <button type="reset" class="hidden lg:block px-5 py-3 bg-white border border-primary/20 text-rose-500 rounded-xl text-[10px] font-bold uppercase tracking-wider hover:bg-rose-50 transition-all shadow-sm">Reset</button>
+              
+              <button type="button" class="hidden lg:block px-4 py-3 bg-white border border-primary/20 text-primary/70 rounded-xl text-[10px] font-bold uppercase tracking-wider hover:bg-primary/5 transition-all shadow-sm" title="Generate ID Card"><i data-lucide="id-card" class="w-4 h-4"></i></button>
+              <button type="button" class="hidden lg:block px-4 py-3 bg-white border border-primary/20 text-primary/70 rounded-xl text-[10px] font-bold uppercase tracking-wider hover:bg-primary/5 transition-all shadow-sm" title="Generate Appointment Letter"><i data-lucide="file-signature" class="w-4 h-4"></i></button>
+              <button type="button" class="hidden lg:block px-4 py-3 bg-white border border-primary/20 text-primary/70 rounded-xl text-[10px] font-bold uppercase tracking-wider hover:bg-primary/5 transition-all shadow-sm" title="Print"><i data-lucide="printer" class="w-4 h-4"></i></button>
+              
+              <button type="button" id="btn-next" class="px-5 py-3 bg-primary text-white rounded-xl text-xs font-bold uppercase tracking-wider hover:bg-primary/95 transition-all shadow-md w-full md:w-auto text-center">Next Step <i data-lucide="arrow-right" class="w-4 h-4 inline-block ml-1"></i></button>
+              <button type="submit" id="btn-submit" class="px-6 py-3 bg-emerald-500 text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-emerald-600 transition-all shadow-lg shadow-emerald-500/20 w-full md:w-auto text-center transform hover:-translate-y-0.5"><i data-lucide="save" class="w-4 h-4 inline-block mr-1"></i> Update Faculty</button>
+          </div>
+      </div>
+
+        </form>
+  </div> <!-- Close p-6 -->
+</div> <!-- Close flex-grow wrapper -->
+
+<!-- Shared Footer -->
+<?php require_once __DIR__ . '/../../includes/footer.php'; ?>
+
+<script>
+  // --- Wizard Logic ---
+  document.addEventListener('DOMContentLoaded', () => {
+      let currentStep = 1;
+      const totalSteps = 10;
+      const stepTitles = [
+          'Identity', 'Contact', 'Education', 'Employment', 'Salary', 'Slots', 'Documents', 'Portal', 'Permissions', 'Notes'
+      ];
+
+      const updateUI = () => {
+          let indicatorHTML = '';
+          for(let i=1; i<=totalSteps; i++) {
+              const isCompleted = i < currentStep;
+              const isActive = i === currentStep;
+              
+              let bgClass = 'bg-primary/5 text-primary/40 border border-primary/10';
+              if (isActive) bgClass = 'bg-primary text-white shadow-md transform scale-105';
+              else if (isCompleted) bgClass = 'bg-emerald-500 text-white shadow-sm';
+
+              indicatorHTML += '<div class="flex items-center gap-1.5 shrink-0">';
+              indicatorHTML += '  <div class="px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ' + bgClass + ' flex items-center gap-1.5 cursor-pointer" onclick="goToStep('+i+')">';
+              indicatorHTML +=      (isCompleted ? '<i data-lucide="check" class="w-3 h-3"></i>' : '') + i + '. ' + stepTitles[i-1];
+              indicatorHTML += '  </div>';
+              indicatorHTML +=    (i < totalSteps ? '<i data-lucide="chevron-right" class="w-3 h-3 text-primary/20 shrink-0"></i>' : '');
+              indicatorHTML += '</div>';
+          }
+          document.getElementById('wizard-steps-indicator').innerHTML = indicatorHTML;
+          
+          if (typeof lucide !== 'undefined') {
+            lucide.createIcons();
+          }
+
+          // Show/Hide steps
+          for(let i=1; i<=totalSteps; i++) {
+              const el = document.getElementById('step-'+i);
+              if(el) {
+                  if(i === currentStep) {
+                      el.classList.remove('hidden');
+                  } else {
+                      el.classList.add('hidden');
+                  }
+              }
+          }
+
+          document.getElementById('btn-prev').classList.toggle('hidden', currentStep === 1);
+          document.getElementById('btn-next').classList.toggle('hidden', currentStep === totalSteps);
+          
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+      };
+
+      window.goToStep = function(step) {
+          if (step >= 1 && step <= totalSteps) {
+              currentStep = step;
+              updateUI();
+          }
+      };
+
+      document.getElementById('btn-next').addEventListener('click', () => {
+          if (currentStep < totalSteps) {
+              currentStep++;
+              updateUI();
+          }
+      });
+
+      document.getElementById('btn-prev').addEventListener('click', () => {
+          if (currentStep > 1) {
+              currentStep--;
+              updateUI();
+          }
+      });
+
+      updateUI();
+      
+      // Auto calc age
+      window.calculateAge = function() {
+          const dobStr = document.getElementById('dob_input').value;
+          if (dobStr) {
+              const dob = new Date(dobStr);
+              const diff_ms = Date.now() - dob.getTime();
+              const age_dt = new Date(diff_ms); 
+              const age = Math.abs(age_dt.getUTCFullYear() - 1970);
+              document.getElementById('age_output').value = age + " Years";
+          }
+      };
+
+      // Auto detect simple (mock)
+      window.autoDetectLocation = function(country) {
+          country = country.toLowerCase().trim();
+          let c = "", code = "", tz = "";
+          if (country === "pakistan") { c = "PKR"; code = "+92"; tz = "PKT"; }
+          else if (country.includes("united states") || country === "usa" || country === "us") { c = "USD"; code = "+1"; tz = "EST"; }
+          else if (country.includes("kingdom") || country === "uk") { c = "GBP"; code = "+44"; tz = "GMT"; }
+          else if (country === "india") { c = "INR"; code = "+91"; tz = "IST"; }
+          else if (country === "uae") { c = "AED"; code = "+971"; tz = "GST"; }
+          else if (country === "saudi arabia" || country === "ksa") { c = "SAR"; code = "+966"; tz = "AST"; }
+          
+          if (c) document.getElementById('loc_currency').value = c;
+          if (code) document.getElementById('loc_code').value = code;
+          if (tz) document.getElementById('loc_tz').value = tz;
+      };
+
+      window.toggleQual = function() {
+          const s = document.getElementById('qual_select');
+          const o = document.getElementById('qual_other');
+          if (s && o) {
+              if (s.value === 'Other') o.classList.remove('hidden');
+              else o.classList.add('hidden');
+          }
+      };
+
+      window.toggleSalaryRates = function() {
+          const st = document.getElementById('salary_type_select');
+          const fc = document.getElementById('fixed_salary_container');
+          const pc = document.getElementById('per_student_container');
+          if (st && fc && pc) {
+              if (st.value === 'Per Student') {
+                  pc.classList.remove('hidden');
+                  fc.classList.add('hidden');
+              } else {
+                  fc.classList.remove('hidden');
+                  pc.classList.add('hidden');
+              }
+          }
+      };
+
+      
+      window.autoFillSalaryRates = function(val) {
+          const baseVal = parseFloat(val);
+          if (isNaN(baseVal) || baseVal <= 0) return;
+          
+          const perMin = baseVal / 600; // 30 mins * 20 days
+          
+          const setVal = (name, mins, daysPerMonth) => {
+              const el = document.querySelector('input[name="' + name + '"]');
+              if (el) el.value = Math.round(perMin * mins * daysPerMonth);
+          };
+          
+          setVal('rate_30_3', 30, 12);
+          setVal('rate_45_3', 45, 12);
+          setVal('rate_45_5', 45, 20);
+          setVal('rate_60_3', 60, 12);
+          setVal('rate_60_5', 60, 20);
+          setVal('rate_90_3', 90, 12);
+          setVal('rate_90_5', 90, 20);
+      };
+
+      window.previewImage = function(input, imgId) {
+          if (input.files && input.files[0]) {
+              const reader = new FileReader();
+              reader.onload = function(e) {
+                  const img = document.getElementById(imgId);
+                  img.src = e.target.result;
+                  img.classList.remove('hidden');
+                  document.getElementById('teacher-icon').classList.add('hidden');
+              }
+              reader.readAsDataURL(input.files[0]);
+          }
+      };
+
+      window.saveDraft = function() {
+          const form = document.getElementById('teacherForm');
+          const draft = {};
+          new FormData(form).forEach((val, key) => {
+              if (key !== 'teacher_picture') draft[key] = val;
+          });
+          localStorage.setItem('teacherDraft', JSON.stringify(draft));
+          alert("Draft saved to browser local storage.");
+      };
+
+      // Load draft if add mode
+      if (window.location.pathname.includes('add_teacher')) {
+          const saved = localStorage.getItem('teacherDraft');
+          if (saved) {
+              try {
+                  const draft = JSON.parse(saved);
+                  const form = document.getElementById('teacherForm');
+                  for (const key in draft) {
+                      const el = form.elements[key];
+                      if (el && el.type !== 'file' && el.type !== 'checkbox') el.value = draft[key];
+                  }
+                  calculateAge();
+              } catch(e) {}
+          }
+      }
+
+      // Prefill Edit Data
+      if (window.TEACHER_DATA) {
+          setTimeout(() => {
+              const s = window.TEACHER_DATA;
+              const form = document.getElementById('teacherForm');
+              if (form && s) {
+                  for (const key in s) {
+                      const el = form.elements[key];
+                      if (el) {
+                          if (el.type !== 'file' && el.type !== 'checkbox') {
+                              el.value = s[key];
+                          }
+                      }
+                  }
+                  if (s.teacher_picture) {
+                      const img = document.getElementById('teacher-preview');
+                      if (img) {
+                         img.src = s.teacher_picture;
+                         img.classList.remove('hidden');
+                         const icn = document.getElementById('teacher-icon');
+                         if (icn) icn.classList.add('hidden');
+                      }
+                  }
+                  
+                  // Handle checkboxes if we had arrays stored, simplified for now
+                  
+                  calculateAge();
+                  toggleQual();
+                  toggleSalaryRates();
+              }
+          }, 100);
+      }
+      
+      toggleQual();
+      toggleSalaryRates();
+  });
+
+  window.showSuccessAnimation = function() {
+      const overlay = document.createElement('div');
+      overlay.className = 'fixed inset-0 bg-white/80 backdrop-blur-sm z-50 flex items-center justify-center transition-all opacity-0';
+      overlay.innerHTML = '<div class="bg-emerald-500 text-white p-8 rounded-3xl shadow-2xl flex flex-col items-center transform scale-75 transition-transform"><i data-lucide="check-circle" class="w-16 h-16 mb-4"></i><h2 class="text-2xl font-black">Success!</h2></div>';
+      document.body.appendChild(overlay);
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+      requestAnimationFrame(() => {
+          overlay.classList.remove('opacity-0');
+          overlay.querySelector('div').classList.remove('scale-75');
+      });
+      localStorage.removeItem('teacherDraft'); // clear draft
+  };
+
+  document.getElementById('teacherForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const btn = document.getElementById('btn-submit');
+      const originalHtml = btn.innerHTML;
+      btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 inline-block mr-1 animate-spin"></i> Saving...';
+      btn.disabled = true;
+      lucide.createIcons();
+      
+      try {
+          const formData = new FormData(this);
+          let fetchUrl = this.action || window.location.href;
+          const token = localStorage.getItem('alfoz_session_token');
+          if (token && !fetchUrl.includes('alfoz_session_token')) {
+              const sep = fetchUrl.includes('?') ? '&' : '?';
+              fetchUrl += sep + 'alfoz_session_token=' + encodeURIComponent(token);
+          }
+
+          const response = await fetch(fetchUrl, {
+              method: 'POST',
+              body: formData,
+              headers: {
+                  'Accept': 'application/json'
+              }
+          });
+          
+          let result = {};
+          try {
+              result = await response.json();
+          } catch(e) {
+              console.log("Not JSON response");
+          }
+          
+          window.showSuccessAnimation();
+          
+          setTimeout(() => {
+              if (result.redirect) {
+                  let redirectUrl = result.redirect;
+                  if (token && !redirectUrl.includes('alfoz_session_token')) {
+                      const sep = redirectUrl.includes('?') ? '&' : '?';
+                      redirectUrl += sep + 'alfoz_session_token=' + encodeURIComponent(token);
+                  }
+                  window.location.href = redirectUrl;
+              } else {
+                  let redirectUrl = `teacher_profile.php?id=${formData.get('id')}&updated=success`;
+                  if (token && !redirectUrl.includes('alfoz_session_token')) {
+                      const sep = redirectUrl.includes('?') ? '&' : '?';
+                      redirectUrl += sep + 'alfoz_session_token=' + encodeURIComponent(token);
+                  }
+                  window.location.href = redirectUrl;
+              }
+          }, 800);
+      } catch (err) {
+          console.error(err);
+          alert('Network error occurred.');
+          btn.innerHTML = originalHtml;
+          btn.disabled = false;
+          lucide.createIcons();
+      }
+  });
+</script>
+
+

@@ -1,0 +1,36 @@
+<?php
+/**
+ * Al Foz Islamic Institute - Super Admin Class Session Attendance
+ */
+require_once __DIR__ . '/../../includes/header.php';
+require_once __DIR__ . '/../../includes/permissions.php';
+require_once __DIR__ . '/../../includes/functions.php';
+
+// Strictly require Super Admin role
+require_role('Admin');
+?>
+
+<!-- Sidebar -->
+<?php require_once __DIR__ . '/../../includes/sidebar.php'; ?>
+
+<!-- Main Portal Area -->
+<div class="flex-grow flex flex-col min-h-screen bg-transparent">
+  <div class="p-6 md:p-8 flex-grow">
+    <!-- Navbar -->
+    <?php require_once __DIR__ . '/../../includes/navbar.php'; ?>
+
+    <div class="mb-8">
+      <a href="attendance.php" class="text-xs font-bold text-primary/60 hover:text-primary transition-colors uppercase tracking-wider flex items-center gap-1">
+        ← Back to Desk
+      </a>
+      <h1 class="text-2xl font-extrabold text-primary mt-3">Live Class Sessions</h1>
+    </div>
+
+    <div class="bg-white rounded-2xl border border-primary/10 shadow-sm p-6">
+      <p class="text-xs text-primary/70">Observe and coordinate ongoing interactive virtual and physical sessions.</p>
+    </div>
+  </div>
+
+  <!-- Shared Footer -->
+  <?php require_once __DIR__ . '/../../includes/footer.php'; ?>
+</div>

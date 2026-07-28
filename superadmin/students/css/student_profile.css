@@ -1,0 +1,10 @@
+/* Al Foz Islamic Institute - Student Profile module styling */
+.profile-card {
+  border-radius: 1.25rem;
+  box-shadow: 0 10px 25px -5px rgba(24, 77, 85, 0.05);
+}
+.profile-badge {
+  background-color: rgba(24, 77, 85, 0.15);
+  color: var(--primary-color, #184D55);
+  font-weight: 600;
+}

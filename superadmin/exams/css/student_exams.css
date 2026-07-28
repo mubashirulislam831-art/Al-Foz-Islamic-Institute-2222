@@ -1,0 +1,5 @@
+/* Al Foz Islamic Institute - Student Exams Page Styling */
+.student-exams-grid {
+  display: grid;
+  gap: 1.5rem;
+}

@@ -1,0 +1,4 @@
+/* Al Foz Islamic Institute - Exams module styles */
+.sanad-border {
+  border: 5px double var(--accent-color);
+}

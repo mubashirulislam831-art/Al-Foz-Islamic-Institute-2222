@@ -1,0 +1,39 @@
+/* Attendance Module Styling */
+.attendance-card {
+    transition: transform 0.3s ease, shadow 0.3s ease;
+}
+.attendance-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 25px -5px rgba(24, 77, 85, 0.1);
+}
+
+.status-present { color: #10b981; } /* Green */
+.status-absent { color: #ef4444; } /* Red */
+.status-student-leave { color: #f59e0b; } /* Orange */
+.status-teacher-leave { color: #8b5cf6; } /* Purple */
+.status-not-joined { color: #eab308; } /* Yellow */
+.status-makeup { color: #3b82f6; } /* Blue */
+
+.bg-status-present { background-color: #10b981; }
+.bg-status-absent { background-color: #ef4444; }
+.bg-status-student-leave { background-color: #f59e0b; }
+.bg-status-teacher-leave { background-color: #8b5cf6; }
+.bg-status-not-joined { background-color: #eab308; }
+.bg-status-makeup { background-color: #3b82f6; }
+
+.timer-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 1.1rem;
+    padding: 0.25rem 0.75rem;
+    border-radius: 0.5rem;
+    background-color: #184d55;
+    color: #F7FAFF;
+    display: inline-block;
+}
+
+.lesson-box, .remarks-box {
+    border: 1px solid rgba(24, 77, 85, 0.1);
+    border-radius: 1rem;
+    padding: 1rem;
+    background-color: white;
+}
